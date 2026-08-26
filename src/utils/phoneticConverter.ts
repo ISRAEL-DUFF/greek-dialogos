@@ -94,8 +94,8 @@ function convertSingleGreekWord(word: string, options: PhoneticOptions = {}): st
 
       if (diphthongReplacement) {
         // Check for accent on first or second vowel
-        const hasAccent1 = hasAccentInRange(chars, i + 1, nextBaseIndex);
-        const hasAccent2 = hasAccentInRange(chars, nextBaseIndex + 1, findNextBaseCharIndex(chars, nextBaseIndex + 1));
+        const hasAccent1 = hasStressAccentInRange(chars, i + 1, nextBaseIndex);
+        const hasAccent2 = hasStressAccentInRange(chars, nextBaseIndex + 1, findNextBaseCharIndex(chars, nextBaseIndex + 1));
         
         let out = diphthongReplacement;
         if (options.preserveAccents && (hasAccent1 || hasAccent2)) {
@@ -132,7 +132,7 @@ function convertSingleGreekWord(word: string, options: PhoneticOptions = {}): st
 
     // Check accent on this character
     const nextBoundary = findNextBaseCharIndex(chars, i + 1);
-    const hasAcute = hasAccentInRange(chars, i + 1, nextBoundary);
+    const hasAcute = hasStressAccentInRange(chars, i + 1, nextBoundary);
 
     if (lowerCh === "η") {
       // η -> "eh" (Prevents modern "ee" shifting)
@@ -312,17 +312,124 @@ function isCombiningMark(char: string): boolean {
   return (code >= 0x0300 && code <= 0x036f) || (code >= 0x1dc0 && code <= 0x1dff) || (code >= 0x20d0 && code <= 0x20ff);
 }
 
-function hasAccentInRange(chars: string[], start: number, end: number): boolean {
+/**
+ * Does this range carry an accent that should be SPOKEN as stress?
+ *
+ * Acute and circumflex are stresses. The grave is not: it marks an oxytone
+ * whose accent is suppressed before a following word — precisely a syllable
+ * that should NOT be emphasised. Marking it would place stress exactly where
+ * Greek removes it.
+ *
+ * Note this is a different question from "does this word carry an accent at
+ * all", which is what clitic detection needs — there a grave still counts,
+ * because a word with a suppressed accent is not a clitic. That check lives in
+ * phrasing.ts as isAccented.
+ */
+function hasStressAccentInRange(chars: string[], start: number, end: number): boolean {
   const limit = end === -1 ? chars.length : end;
   for (let k = start; k < limit; k++) {
     if (
       chars[k] === ACUTE_ACCENT ||
       chars[k] === CIRCUMFLEX ||
-      chars[k] === CIRCUMFLEX_COMBINING ||
-      chars[k] === GRAVE_ACCENT
+      chars[k] === CIRCUMFLEX_COMBINING
     ) {
       return true;
     }
   }
   return false;
+}
+
+
+/**
+ * Pass 2 — transcribe a phonologically grouped line into the string sent to TTS.
+ *
+ * Each word is transcribed INDEPENDENTLY and only then joined at the seam.
+ * That ordering is the whole point.
+ *
+ * An earlier implementation fused the Greek words first and transcribed the
+ * fused token, which loses the association between a word and its own
+ * diacritics: scanning `αὐτοῦ-οὗ` as one token finds the rough breathing that
+ * belongs to οὗ and prepends the aspirate to the front of the phrase, giving
+ * `howtoo-oo` for a word that carries smooth breathing. Transcribing first
+ * keeps every mark attached to the word that owns it.
+ */
+
+import { groupPhonologicalWords, PhraseGroup } from "./phrasing";
+
+const VOWEL_START = /^[aeiouāēīōū]/i;
+const CONSONANT_END = /[bcdfghjklmnpqrstvwxyz]$/i;
+const TRAILING_ELISION = /['’᾽ʼ]$/;
+
+/**
+ * Would fusing these two transcriptions create a sound that is in neither word?
+ *
+ * Our long vowels are digraphs — η is `eh`, ω is `oh` — so a word ending in one
+ * followed by a vowel-initial word produces an `h` sitting directly before a
+ * vowel, which reads as an aspirate. `ἐγώ` + `εἰμι` fuses to `egoheimi`, and an
+ * English-reading engine says *ego-HAY-mee*, inventing a rough breathing on a
+ * word that has smooth breathing.
+ *
+ * Fusion must never introduce a phoneme. Where it would, the words stay
+ * separate: losing one juncture costs some smoothness, while a spurious
+ * aspirate is the exact class of error this project rejected Modern
+ * pronunciation to avoid.
+ */
+function fusionWouldDistort(left: string, right: string): boolean {
+  return /h$/i.test(left) && VOWEL_START.test(right);
+}
+
+/**
+ * Join two already-transcribed words at a phonological seam.
+ *
+ * Greek word-final consonants are limited to ν, ρ, ς plus the κ/ξ of οὐκ and
+ * ἐκ, so the set of resyllabification sites is small and enumerable.
+ *
+ * The second element is lowercased: a capital inside a token (`HoBoréas`) can
+ * be read as an initialism, and case carries no phonological information here.
+ * Display capitalization lives in the separate `transliteration` field.
+ */
+function joinAtSeam(left: string, right: string): string {
+  const tail = right.charAt(0).toLowerCase() + right.slice(1);
+
+  // An elided word has lost its final vowel; the apostrophe is orthography,
+  // not sound, and must not survive into speech.
+  if (TRAILING_ELISION.test(left)) {
+    const stem = left.replace(TRAILING_ELISION, "");
+    return fusionWouldDistort(stem, tail) ? `${stem} ${tail}` : stem + tail;
+  }
+
+  if (fusionWouldDistort(left, tail)) return `${left} ${tail}`;
+
+  // Consonant + vowel: the consonant becomes the onset of the next syllable.
+  // This is why οὐκ exists at all — the κ is there to avoid hiatus.
+  return left + tail;
+}
+
+export interface SpokenFormOptions extends PhoneticOptions {
+  /** Set false to transcribe word-by-word, i.e. the pre-phrasing behaviour. */
+  phrasing?: boolean;
+}
+
+/**
+ * Produce the string handed to the speech engine.
+ *
+ * With `phrasing: false` this is byte-identical to
+ * convertToReconstructedPhonetics, so the previous behaviour remains available
+ * for comparison and as a fallback.
+ */
+export function convertToSpokenForm(text: string, options: SpokenFormOptions = {}): string {
+  if (!text) return "";
+  if (options.phrasing === false) {
+    return convertToReconstructedPhonetics(text, options);
+  }
+
+  const groups: PhraseGroup[] = groupPhonologicalWords(text);
+
+  return groups
+    .map((group) =>
+      group.words
+        .map((word) => convertToReconstructedPhonetics(word, options))
+        .reduce((acc, part) => (acc ? joinAtSeam(acc, part) : part), "")
+    )
+    .join(" ");
 }

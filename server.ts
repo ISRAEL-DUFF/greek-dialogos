@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { convertToReconstructedPhonetics } from "./src/utils/phoneticConverter";
+import { convertToReconstructedPhonetics, convertToSpokenForm } from "./src/utils/phoneticConverter";
 import { VOICE_NAMES, VoiceName } from "./src/types";
 
 dotenv.config();
@@ -282,7 +282,18 @@ function buildSpokenPrompt({
 // Single speaker TTS endpoint with Reconstructed Attic/Erasmian pronunciation
 app.post("/api/tts", async (req, res) => {
   try {
-    const { text, voice: rawVoice = "Fenrir", speakerName, emotion, context } = req.body;
+    const {
+      text,
+      voice: rawVoice = "Fenrir",
+      speakerName,
+      emotion,
+      context,
+      // Connected-speech options. The client sends these explicitly; the
+      // defaults here are the pre-phrasing behaviour, so a caller that predates
+      // this feature — or a direct API user — gets byte-identical output.
+      phrasing = false,
+      accents = false,
+    } = req.body;
     if (!text) {
       return res.status(400).json({ error: "Text is required" });
     }
@@ -294,7 +305,13 @@ app.post("/api/tts", async (req, res) => {
 
     // Transform incoming Greek text into customized Latin-character phonetic string
     // to force the TTS engine to bypass Modern Greek phonology and output Reconstructed Attic / Erasmian pronunciation.
-    const phoneticText = convertToReconstructedPhonetics(text);
+    // Group into phonological words before transcribing, so proclitics,
+    // enclitics and elisions are spoken as single units rather than as a list
+    // of citation forms. Falls back to word-by-word when phrasing is off.
+    const phoneticText = convertToSpokenForm(text, {
+      phrasing,
+      preserveAccents: accents,
+    });
 
     // Contextual delivery is opt-in: the client sends `context` only when the
     // experimental toggle is on, so default behaviour is byte-identical.
@@ -317,6 +334,8 @@ app.post("/api/tts", async (req, res) => {
           provider: `OpenRouter (${MODELS.openrouterTts})`,
           pronunciation: "Reconstructed Attic/Erasmian",
           contextual: Boolean(context),
+          phrasing: Boolean(phrasing),
+          accents: Boolean(accents),
         });
       } catch (openRouterErr: any) {
         console.warn("OpenRouter TTS failed, attempting fallback to Gemini if available:", openRouterErr?.message);

@@ -1,5 +1,5 @@
 import React from "react";
-import { Play, Square, Volume2, Users, Repeat, Download, HardDrive, Check, Loader2, X, MessagesSquare } from "lucide-react";
+import { Play, Square, Volume2, Users, Repeat, Download, HardDrive, Check, Loader2, X, MessagesSquare, Waves } from "lucide-react";
 import { VoiceName, DisplayMode, AncientGreekModule } from "../types";
 import { AVAILABLE_VOICES } from "../data/dialogueData";
 
@@ -13,6 +13,8 @@ interface AudioControlsProps {
   onToggleLoop: () => void;
   useContextualDelivery?: boolean;
   onToggleContextualDelivery?: () => void;
+  useConnectedSpeech?: boolean;
+  onToggleConnectedSpeech?: () => void;
   currentModule: AncientGreekModule;
   speakerVoices: Record<string, VoiceName>;
   onSetSpeakerVoice: (speakerName: string, voice: VoiceName) => void;
@@ -40,6 +42,8 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   onToggleLoop,
   useContextualDelivery = false,
   onToggleContextualDelivery,
+  useConnectedSpeech = false,
+  onToggleConnectedSpeech,
   currentModule,
   speakerVoices,
   onSetSpeakerVoice,
@@ -148,6 +152,33 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
               {isLooping ? "ON" : "OFF"}
             </span>
           </button>
+
+          {/* Connected speech: groups proclitics, enclitics and elisions into
+              single phonological words and marks stress, so the engine reads a
+              phrase rather than a list of citation forms. */}
+          {onToggleConnectedSpeech && (
+            <button
+              id="btn-toggle-connected-speech"
+              onClick={onToggleConnectedSpeech}
+              disabled={isPlaying || isPrecaching}
+              className={`flex items-center gap-1.5 px-3 py-1.5 border text-[10px] uppercase font-sans font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50 ${
+                useConnectedSpeech
+                  ? "border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0] ring-1 ring-[#8B7355]"
+                  : "border-[#E5E1D8] bg-[#F7F5F0] text-[#5C564E] hover:border-[#2D2A26] hover:text-[#2D2A26]"
+              }`}
+              title={
+                useConnectedSpeech
+                  ? "Connected speech ON: οὐκ ἐν is spoken as one word (ouken), with stress marked. Cached separately from the plain reading."
+                  : "Connected speech OFF: each word is spoken separately. Enable to join proclitics and enclitics to their host words."
+              }
+            >
+              <Waves className={`w-3.5 h-3.5 ${useConnectedSpeech ? "text-[#8B7355]" : ""}`} />
+              <span>Flow:</span>
+              <span className={useConnectedSpeech ? "text-[#8B7355] font-extrabold" : "font-normal text-[#5C564E]"}>
+                {useConnectedSpeech ? "ON" : "OFF"}
+              </span>
+            </button>
+          )}
 
           {/* Contextual delivery toggle (experimental).
               Audio is cached separately per mode, so toggling never serves the

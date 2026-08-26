@@ -1,0 +1,190 @@
+/**
+ * Pass 1 — phonological phrasing.
+ *
+ * Greek is not spoken one orthographic word at a time. Proclitics lean forward
+ * onto the following word, enclitics lean back onto the preceding one, and an
+ * elided word fuses with what follows. Our transcriber split on whitespace and
+ * converted each word alone, so the speech model received a list of isolated
+ * tokens and pronounced them in citation form.
+ *
+ * This groups words into the units they are actually spoken as, before any
+ * character mapping happens.
+ *
+ * WHY THE ACCENT IS THE DISAMBIGUATOR
+ * -----------------------------------
+ * The hard cases look unsolvable without parsing: interrogative τίς and
+ * indefinite τις are the same letters, as are ποῖ and ποι, ἔστι and ἐστι.
+ *
+ * But Greek orthography already encodes the distinction. Clitics are, by
+ * definition, words that carry no accent of their own — that is *why* they lean
+ * on a neighbour. The interrogatives are accented; the indefinites are not.
+ *
+ * So the test is not "is this word in a list" but "is this word in the list AND
+ * unaccented". Stripping diacritics before the lookup — as earlier drafts did —
+ * throws away the one signal that separates the two, and produces exactly the
+ * failures it should avoid (binding an interrogative as an enclitic).
+ *
+ * This is not a heuristic standing in for syntax. It is the rule the writing
+ * system was designed to express.
+ */
+
+const ACUTE = "́";
+const GRAVE = "̀";
+const CIRCUMFLEX = "͂";
+const CIRCUMFLEX_TILDE = "̃";
+
+/** Any punctuation that ends a phrase. Greek uses ; as the question mark and · as the ano teleia. */
+const PHRASE_BREAK = /[,.;·;!?:·«»""()—–]/;
+
+/** Apostrophes marking elision, straight and typographic. */
+const ELISION = /['’᾽ʼ]$/;
+
+export type JoinReason = "proclitic" | "enclitic" | "elision" | "none";
+
+export interface PhraseGroup {
+  /** Original orthographic words, verbatim and in order. */
+  words: string[];
+  join: JoinReason;
+}
+
+/**
+ * Proclitics: unaccented words that lean onto the word after them.
+ * Compared against the accent-stripped form, but only for words that carry no
+ * accent to begin with — see isAccented.
+ */
+const PROCLITICS = new Set([
+  // article, nominative only — the oblique forms (τοῦ, τῷ, τόν …) are accented
+  "ο", "η", "οι", "αι",
+  // prepositions
+  "εν", "εις", "ες", "εκ", "εξ",
+  // conjunctions and particles
+  "ως", "ει",
+  // negative
+  "ου", "ουκ", "ουχ",
+]);
+
+/** Enclitics: unaccented words that lean back onto the word before them. */
+const ENCLITICS = new Set([
+  // particles
+  "τε", "γε", "τοι", "περ", "νυν",
+  // pronouns (unaccented forms only; ἐμοῦ / ἐμοί / ἐμέ are emphatic and accented)
+  "μου", "μοι", "με", "σου", "σοι", "σε", "ου", "οι", "ε",
+  // indefinite τις and its inflections
+  "τις", "τι", "τινος", "τινι", "τινα", "τινων", "τισι", "τισιν", "τινας",
+  // indefinite adverbs — the interrogatives ποῦ, πότε, πῶς, ποῖ are accented
+  "ποτε", "που", "πως", "ποθεν", "ποι", "πη", "πω",
+  // present indicative of εἰμί and φημί (εἶ and φῄς are accented, so excluded)
+  "ειμι", "εστι", "εστιν", "εσμεν", "εστε", "εισι", "εισιν",
+  "φημι", "φησι", "φησιν", "φαμεν", "φατε", "φασι", "φασιν",
+]);
+
+/**
+ * Words that appear in both lists. The proclitic reading wins, because the
+ * article and the negative are far more frequent than the enclitic pronouns
+ * οὗ / οἷ. Flagged rather than hidden: this is a genuine ambiguity that only
+ * syntax resolves, and it is the one place a human or a model could help.
+ */
+export const AMBIGUOUS_CLITICS = new Set(["ου", "οι", "εις"]);
+
+/** Strip every combining mark, leaving bare letters, lowercased. */
+function bareForm(word: string): string {
+  return word
+    .normalize("NFD")
+    .replace(/[̀-ͯͅ]/g, "")
+    .replace(ELISION, "")
+    .toLowerCase();
+}
+
+/**
+ * Does this word carry an accent of its own?
+ *
+ * Grave counts as an accent here. A grave marks an oxytone whose accent is
+ * suppressed *in context* — the word still has one, so it is not a clitic.
+ * (For stress marking in the output, grave is treated as unstressed; that is a
+ * different question, handled in the transcriber.)
+ */
+function isAccented(word: string): boolean {
+  const nfd = word.normalize("NFD");
+  return (
+    nfd.includes(ACUTE) ||
+    nfd.includes(GRAVE) ||
+    nfd.includes(CIRCUMFLEX) ||
+    nfd.includes(CIRCUMFLEX_TILDE)
+  );
+}
+
+/** True when a word ends in an elision apostrophe. */
+function isElided(word: string): boolean {
+  return ELISION.test(word);
+}
+
+/**
+ * True when the token ends a phrase. Fusing across a comma or a full stop
+ * produced audibly wrong output in an earlier implementation — it joined
+ * `φίλε!` to the `Ποῖ` beginning the next sentence.
+ */
+function endsPhrase(word: string): boolean {
+  return PHRASE_BREAK.test(word.slice(-1));
+}
+
+/** A proclitic must be in the list AND carry no accent of its own. */
+export function isProclitic(word: string): boolean {
+  return !isAccented(word) && PROCLITICS.has(bareForm(word));
+}
+
+/** An enclitic must be in the list AND carry no accent of its own. */
+export function isEnclitic(word: string): boolean {
+  return !isAccented(word) && ENCLITICS.has(bareForm(word));
+}
+
+/**
+ * Group a line into phonological words.
+ *
+ * Greedy left-to-right. A group never crosses phrase-final punctuation, and
+ * never exceeds MAX_GROUP words — a longer run is far more likely to be a bug
+ * than a real phonological word.
+ */
+const MAX_GROUP = 4;
+
+export function groupPhonologicalWords(text: string): PhraseGroup[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const groups: PhraseGroup[] = [];
+
+  let i = 0;
+  while (i < words.length) {
+    const group: string[] = [words[i]];
+    let reason: JoinReason = "none";
+
+    // Absorb following words while the current tail leans forward onto them.
+    while (i + group.length < words.length && group.length < MAX_GROUP) {
+      const tail = group[group.length - 1];
+      const next = words[i + group.length];
+
+      // A phrase boundary stops the group, whatever the tail is.
+      if (endsPhrase(tail)) break;
+
+      if (isElided(tail)) {
+        group.push(next);
+        reason = reason === "none" ? "elision" : reason;
+        continue;
+      }
+      if (isProclitic(tail)) {
+        group.push(next);
+        reason = reason === "none" ? "proclitic" : reason;
+        continue;
+      }
+      // The next word leans back onto this group.
+      if (isEnclitic(next)) {
+        group.push(next);
+        reason = reason === "none" ? "enclitic" : reason;
+        continue;
+      }
+      break;
+    }
+
+    groups.push({ words: group, join: reason });
+    i += group.length;
+  }
+
+  return groups;
+}

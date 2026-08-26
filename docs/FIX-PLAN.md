@@ -684,6 +684,45 @@ One finding from that work belongs here as a defect in its own right: **`ου` i
 
 ---
 
+## Connected speech — implemented 2026-08-26
+
+The juncture defect is fixed and **on by default**. `PHRASING-SPEC.md` described an LLM-assisted design; most of it turned out to be unnecessary, for a reason worth recording.
+
+### The accent is the disambiguator
+
+The spec routed clitic detection to an LLM because `τίς`/`τις`, `ποῖ`/`ποι` and `ἔστι`/`ἐστι` are homographs that seemed to need syntax. They do not. **Clitics are by definition unaccented — that is *why* they lean on a neighbour.** The interrogatives carry an accent; the indefinites do not. So the test is not "is this word in a list" but "is it in the list **and unaccented**".
+
+An externally proposed implementation stripped diacritics before the lookup, discarding exactly that signal, and consequently bound interrogative `Ποῖ` backwards across an exclamation mark. This is not a heuristic standing in for syntax; it is the rule Greek orthography exists to express. **No LLM call is required for the common cases.**
+
+### What shipped
+
+- [`src/utils/phrasing.ts`](../src/utils/phrasing.ts) — groups words into phonological units. Accent-aware clitic tests, phrase-final punctuation as a hard barrier, a 4-word group cap.
+- `convertToSpokenForm()` in [`phoneticConverter.ts`](../src/utils/phoneticConverter.ts) — transcribes each word **independently**, then joins at the seam.
+- The grave is no longer marked as stress (`hasStressAccentInRange`), so `τὸ` → `to`, not `tó`.
+- A `Flow: ON/OFF` control, cached as a separate audio variant.
+
+### Transcribe first, join second
+
+The ordering is the design. An earlier implementation fused the Greek and then transcribed the fused token, which severs a word from its own diacritics: scanning `αὐτοῦ-οὗ` finds the rough breathing belonging to `οὗ` and prepends the aspirate to the front of the phrase, giving `howtoo-oo` for a word with smooth breathing. Three such failures are pinned as regression tests.
+
+### Fusion must never invent a phoneme
+
+Running the whole corpus before enabling the default caught a defect the fixtures had not: our long vowels are digraphs, so `ἐγώ` (`egoh`) fused to `εἰμι` (`eimi`) yields `egoheimi` — an aspirate before a vowel, on a smooth-breathing word. **Fusion is now skipped wherever it would create a sound present in neither word.** Losing one juncture costs a little smoothness; a spurious aspirate is the exact error class this project rejected Modern pronunciation to avoid.
+
+Mid-token capitals are also lowered — `HoBoréas` risks being read as an initialism.
+
+### Effect on the corpus
+
+All 17 lines change; 16 multi-word groups form. `Εἰς τὴν` → `Eistehn`, `ἐν τῇ` → `entéh`, `ὁδοιπόρος τις` → `hodoipórostis`, `σμικρῷ τινι` → `smikróhtini`.
+
+### Still open
+
+`Οὐκ ἐν τῷ` groups but `πολλῷ` stands alone: `τῷ` is accented, and only the *nominative* article is classically proclitic. Correct by the textbook, and it means real choppiness survives. Whether grouping should extend further is with the external reviewer.
+
+The diphthong respellings (`ου → oo` and family) remain unadopted — they change phonemes rather than juncture and still need the listening test. See P2-4.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

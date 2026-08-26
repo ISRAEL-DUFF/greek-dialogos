@@ -64,6 +64,15 @@ export default function App() {
    * mode, so switching does not serve the other mode's rendering.
    */
   const [useContextualDelivery, setUseContextualDelivery] = useState<boolean>(false);
+  /**
+   * Connected speech (phrasing + stress). ON by default.
+   *
+   * Groups proclitics, enclitics and elisions into single phonological words
+   * and marks acute/circumflex stress, so the engine reads a phrase rather
+   * than a list of citation forms. The toggle stays available because the two
+   * renderings are cached separately and can be compared on the same line.
+   */
+  const [useConnectedSpeech, setUseConnectedSpeech] = useState<boolean>(true);
   
   // Display mode
   const [displayMode, setDisplayMode] = useState<DisplayMode>("all");
@@ -236,7 +245,8 @@ export default function App() {
    */
   const fetchLineAudioBuffer = async (line: DialogueLine): Promise<AudioBuffer> => {
     const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
-    const { context, variant } = buildLineContext(line, currentModule);
+    const { context, variant: ctxVariant } = buildLineContext(line, currentModule);
+    const variant = useConnectedSpeech ? `${ctxVariant}flow` : ctxVariant;
 
     // 1. Check IndexedDB cache first
     const cached = await audioStorage.getCachedAudio(currentModule.id, line.id, voice, variant);
@@ -253,6 +263,8 @@ export default function App() {
         voice,
         speakerName: line.speakerEn,
         context,
+        phrasing: useConnectedSpeech,
+        accents: useConnectedSpeech,
       }),
     });
 
@@ -313,7 +325,8 @@ export default function App() {
       if (controller.signal.aborted) break;
 
       const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
-      const { context, variant } = buildLineContext(line, mod);
+      const { context, variant: ctxVariant } = buildLineContext(line, mod);
+      const variant = useConnectedSpeech ? `${ctxVariant}flow` : ctxVariant;
       const existing = await audioStorage.getCachedAudio(mod.id, line.id, voice, variant);
 
       if (existing) {
@@ -328,6 +341,8 @@ export default function App() {
               voice,
               speakerName: line.speakerEn,
               context,
+              phrasing: useConnectedSpeech,
+              accents: useConnectedSpeech,
             }),
             signal: controller.signal,
           });
@@ -711,6 +726,8 @@ export default function App() {
             onCancelPrecache={handleCancelPrecache}
             useContextualDelivery={useContextualDelivery}
             onToggleContextualDelivery={() => setUseContextualDelivery((prev) => !prev)}
+            useConnectedSpeech={useConnectedSpeech}
+            onToggleConnectedSpeech={() => setUseConnectedSpeech((prev) => !prev)}
             precacheResult={precacheResult}
             onExportModule={() => handleExportCurrentModule(currentModule)}
           />
