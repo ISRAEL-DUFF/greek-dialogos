@@ -170,7 +170,7 @@ It stays P0 for a different reason the verification exposed: **`google/gemini-2.
 
 ## P1 — Real defects, off the default path
 
-### P1-1 · Delete `/api/tts-dialogue`
+### P1-1 · ✅ DONE — `/api/tts-dialogue` deleted
 **Where:** [`server.ts:279-374`](../server.ts#L279) · **Decision:** D7
 
 Nothing in `src/` calls this endpoint. It normalizes every speaker to `"Socrates"` or `"Alexander"` ([`server.ts:288-292`](../server.ts#L288)), so it cannot serve the Aesop or *Apology* modules, and its `socratesVoice` / `alexanderVoice` parameters bake that assumption into the API contract.
@@ -181,14 +181,14 @@ An earlier revision of this plan proposed rebuilding it as a windowed multi-spea
 
 **Verify:** `grep -rn "tts-dialogue" .` returns nothing outside this document; all three built-in modules still play end to end.
 
-### P1-2 · Pre-cache ignores the stop control and has no cancel
+### P1-2 · ✅ DONE — pre-cache is cancellable and reports failures
 **Where:** [`src/App.tsx:183-224`](../src/App.tsx#L183)
 
 `handlePrecacheAudio()` loops every line with a sequential `await fetch`, checking only `isPrecaching` at entry. There is no way to cancel a run in progress, navigating away leaves it running, and a module with many lines issues that many billed TTS calls with no ceiling. Failures are swallowed to `console.warn` ([`src/App.tsx:216`](../src/App.tsx#L216)), so a run where every call 401s still reports as complete.
 
 **Fix:** add an `AbortController` stored in a ref, check it each iteration, abort on module change and unmount, and surface a cancel button in the progress UI. Count failures and report them (`"cached 8 of 12 lines, 4 failed"`) instead of silently finishing.
 
-### P1-3 · Playback race is handled by a 20 ms sleep
+### P1-3 · ✅ DONE — playback race replaced with a generation counter
 **Where:** [`src/App.tsx:255-258`](../src/App.tsx#L255), [`src/App.tsx:345-348`](../src/App.tsx#L345)
 
 Both play handlers set `stopSequenceRef.current = true`, call `audioPlayer.stop()`, `await new Promise(r => setTimeout(r, 20))`, then reset the flag. The comment calls it a "brief microtask for previous loop to exit". It is a timing guess: if the previous loop is awaiting a slow `fetchLineAudioBuffer`, it has not reached its stop check within 20 ms and will resume playing after the new sequence starts, producing two overlapping playbacks.
@@ -424,6 +424,32 @@ POST /api/tts  voice="Zephyr"        → 200
 
 ---
 
+## Phase 3 completion log — 2026-08-26
+
+All three items applied and verified, including in the running UI.
+
+| Item | Change |
+|---|---|
+| **P1-1** | `/api/tts-dialogue` removed — 116 lines. A comment at [`server.ts:328`](../server.ts#L328) records why it was deleted rather than rebuilt, so the rejected design does not get re-proposed. The multi-speaker claim is gone from the README. |
+| **P1-3** | `stopSequenceRef` boolean + 20 ms sleep replaced by a generation counter (`playbackGenerationRef`) in [`App.tsx`](../src/App.tsx). Each sequence claims a generation and bails at every await boundary once superseded. Also fixes two latent bugs the boolean had: a superseded sequence could overwrite the new one's `playbackError`, and could clear shared playback state out from under it. |
+| **P1-2** | Pre-cache now uses an `AbortController`, aborts on cancel / module change / unmount, and counts `cached` / `failed` / `skipped` / `cancelled` instead of swallowing errors to `console.warn`. A Cancel button appears during a run, and the outcome is reported in the UI. |
+
+**Verification:**
+
+- `tsc --noEmit` clean; `/api/tts-dialogue` returns 404, `/api/tts`, `/api/health`, `/api/providers` still 200.
+- **The race in P1-3 was reproduced before and after.** A standalone simulation of both schemes with a 200 ms synthesis and a second play action at t=20 ms:
+
+  ```
+  old (boolean + 20ms sleep): ["A","B"]   <- BOTH PLAYED: overlapping audio
+  new (generation counter)  : ["B"]       <- only the newest sequence plays
+  ```
+
+  This is the concrete failure the fixed sleep allowed: any synthesis slower than 20 ms — which is all of them — left the old sequence alive.
+
+- **Pre-cache cancellation driven in the browser.** Started a run on the 8-line default module, cancelled mid-flight: the Cancel button appeared during the run, the summary read **"Cancelled — 5 cached"**, and the cache counter moved 0/8 → **5/8** with completed lines preserved and the in-flight request abandoned.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
@@ -445,7 +471,7 @@ Stop here and confirm the app actually works end to end before touching anything
 7. **P2-1** — commit `package-lock.json`.
 8. **P2-3** — report resolved model ids from `/api/health`, so the next withdrawal is diagnosable in one request.
 
-**Phase 3 — subtraction and correctness**
+**Phase 3 — subtraction and correctness ✅ COMPLETE (2026-08-26)**
 9. **P1-1** — delete `/api/tts-dialogue`.
 10. **P1-3** — replace the 20 ms sleep with a generation counter.
 11. **P1-2** — cancellable pre-cache with honest failure reporting.
