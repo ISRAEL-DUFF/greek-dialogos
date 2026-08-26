@@ -788,6 +788,8 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+export { app };
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -808,4 +810,10 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the standalone HTTP listener if not running as a Vercel serverless function
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
+
