@@ -16,6 +16,9 @@
  *
  * If you deliberately change the transcription scheme, these tests SHOULD fail.
  * Update them in the same commit and say why.
+ *
+ * The two defects this suite originally pinned as wrong-but-current (P2-9,
+ * P2-10) have since been fixed; their assertions now describe correct output.
  */
 
 import { test, describe } from "node:test";
@@ -50,7 +53,9 @@ describe("diphthongs", () => {
   test("αυ", () => check("αὐτός", "autos"));
   test("ευ", () => check("εὐθύς", "euthus"));
   test("ου", () => check("οὐρανός", "ouranos"));
-  test("υι", () => check("υἱός", "uios"));
+  // υἱός carries rough breathing on the iota, so it aspirates: see the
+  // word-initial aspiration block below.
+  test("υι", () => check("υἱός", "huios"));
 });
 
 describe("breathing marks", () => {
@@ -96,21 +101,32 @@ describe("sentence level", () => {
     ));
 });
 
-/**
- * KNOWN DEFECTS — these assert wrong-but-current behaviour on purpose.
- *
- * They are here so the bugs are visible and so a fix trips a test rather than
- * passing unnoticed. If you fix one, update its assertion in the same commit.
- * Tracked as P2-9 and P2-10 in docs/FIX-PLAN.md.
- */
-describe("known defects (characterization only)", () => {
-  test("BUG: initial ῥ uppercases the following consonant — should be 'Hrohmeh'", () => {
-    check("Ῥώμη", "HRohmeh");
+describe("word-initial aspiration on diphthongs (P2-9, P2-10 — fixed)", () => {
+  test("initial ῥ does not uppercase the following consonant", () => {
+    check("Ῥώμη", "Hrohmeh");
+    check("ῥήτωρ", "hrehtohr");
   });
 
-  test("BUG: rough breathing on the second element of ηυ is dropped — should aspirate", () => {
-    check("ηὗρον", "ehuron");
-    check("ηὕρηκα", "ehurehka");
+  test("rough breathing on the second element of ηυ aspirates", () => {
+    check("ηὗρον", "hehuron");
+    check("ηὕρηκα", "hehurehka");
+  });
+
+  test("rough breathing on the second element of υι aspirates", () => {
+    // υἱός was transcribed "uios" before the diphthong list was completed.
+    check("υἱός", "huios");
+  });
+
+  test("the remaining diphthongs still aspirate correctly", () => {
+    check("οὗτος", "houtos");
+    check("εὑρίσκω", "heuriskoh");
+    check("αἱ", "hai");
+    check("οἱ", "hoi");
+  });
+
+  test("capitalized rough breathing on a vowel is unaffected", () => {
+    check("Ἑλλάς", "Hellas");
+    check("Ἡμέρα", "Hehmera");
   });
 });
 

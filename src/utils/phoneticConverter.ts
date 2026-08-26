@@ -240,6 +240,14 @@ function convertSingleGreekWord(word: string, options: PhoneticOptions = {}): st
     i = nextBoundary === -1 ? len : nextBoundary;
   }
 
+  // The prepended aspirate carries the word's capital, so the letter after it
+  // must not also be capitalized: Ῥώμη is Hrohmeh, not HRohmeh. Vowels already
+  // transcribe lowercase, so this only shows up on initial rho — but "HR" is
+  // read as an initialism by a TTS engine, not as an aspirated rho.
+  if (hasInitialRoughBreathing && isFirstCharCapital && result.length > 1) {
+    return result[0] + result[1].toLowerCase() + result.slice(2);
+  }
+
   return result;
 }
 
@@ -269,12 +277,15 @@ function checkWordInitialRoughBreathing(nfdWord: string): boolean {
     if (chars[k] === ROUGH_BREATHING) return true;
   }
 
-  // If first two characters form an initial diphthong (ai, ei, oi, ou, au, eu), check breathing on 2nd vowel
+  // A word-initial diphthong carries its breathing on the SECOND vowel, so the
+  // mark must be looked for there. This list is the eight Attic diphthongs:
+  // ηυ and υι were previously missing, which silently dropped the aspirate
+  // from words like ηὗρον and υἱός.
   if (secondBaseIndex !== -1) {
     const b1 = firstBase.toLowerCase();
     const b2 = chars[secondBaseIndex].toLowerCase();
     const pair = b1 + b2;
-    if (["αι", "ει", "οι", "ου", "αυ", "ευ"].includes(pair)) {
+    if (["αι", "ει", "οι", "υι", "ου", "αυ", "ευ", "ηυ"].includes(pair)) {
       const thirdBaseIndex = findNextBaseCharIndex(chars, secondBaseIndex + 1);
       const endSecond = thirdBaseIndex === -1 ? chars.length : thirdBaseIndex;
       for (let k = secondBaseIndex + 1; k < endSecond; k++) {
