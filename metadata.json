@@ -1,0 +1,7 @@
+{
+  "name": "Ancient Greek Dialogue TTS",
+  "description": "Interactive Ancient Greek reader and multi-module library with Reconstructed Erasmian Text-to-Speech powered by Gemini Flash TTS and AI module importer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

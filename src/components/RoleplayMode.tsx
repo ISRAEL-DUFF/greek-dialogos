@@ -1,0 +1,227 @@
+import React, { useState } from "react";
+import { Volume2, ArrowRight, RotateCcw } from "lucide-react";
+import { DialogueLine, VoiceName, AncientGreekModule } from "../types";
+
+interface RoleplayModeProps {
+  module: AncientGreekModule;
+  onPlayLine: (line: DialogueLine) => Promise<void>;
+  playbackSpeed: number;
+}
+
+export const RoleplayMode: React.FC<RoleplayModeProps> = ({
+  module,
+  onPlayLine,
+  playbackSpeed,
+}) => {
+  const defaultSpeaker = module.speakers[0]?.name || "Σωκράτης";
+  const [selectedRole, setSelectedRole] = useState<string>(defaultSpeaker);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [isPlayingAuto, setIsPlayingAuto] = useState(false);
+
+  const lines = module.lines;
+  const currentLine = lines[currentStepIndex];
+  const isUserTurn = currentLine ? currentLine.speaker === selectedRole : false;
+
+  const handleNextStep = async () => {
+    if (currentStepIndex < lines.length - 1) {
+      const nextIndex = currentStepIndex + 1;
+      setCurrentStepIndex(nextIndex);
+      const nextLine = lines[nextIndex];
+      if (nextLine.speaker !== selectedRole) {
+        setIsPlayingAuto(true);
+        try {
+          await onPlayLine(nextLine);
+        } finally {
+          setIsPlayingAuto(false);
+        }
+      }
+    } else {
+      setIsCompleted(true);
+    }
+  };
+
+  const handleReset = () => {
+    setCurrentStepIndex(0);
+    setIsCompleted(false);
+  };
+
+  const handleStartRoleplay = async (role: string) => {
+    setSelectedRole(role);
+    setCurrentStepIndex(0);
+    setIsCompleted(false);
+    const firstLine = lines[0];
+    if (firstLine && firstLine.speaker !== role) {
+      setIsPlayingAuto(true);
+      try {
+        await onPlayLine(firstLine);
+      } finally {
+        setIsPlayingAuto(false);
+      }
+    }
+  };
+
+  return (
+    <div className="bg-[#FFFFFF] border-2 border-[#2D2A26] p-6 shadow-none space-y-6">
+      
+      {/* Header & Character Selection */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-5 border-b border-[#E5E1D8]">
+        <div>
+          <span className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.3em] block mb-1">
+            Recitation & Dialectic Exercise • {module.titleEn}
+          </span>
+          <h2 className="text-2xl font-serif font-normal text-[#2D2A26]">
+            Interactive Conversational Roleplay
+          </h2>
+          <p className="text-xs text-[#5C564E] font-sans mt-1">
+            Select your persona. Speak your lines aloud in Ancient Greek while Gemini TTS reciprocates in character for the other speakers.
+          </p>
+        </div>
+
+        {/* Role Switcher */}
+        <div className="flex flex-wrap items-center gap-2">
+          {module.speakers.map((sp) => (
+            <button
+              key={sp.name}
+              onClick={() => handleStartRoleplay(sp.name)}
+              className={`px-3 py-1.5 border text-[10px] uppercase tracking-widest font-sans font-bold transition-all cursor-pointer ${
+                selectedRole === sp.name
+                  ? "border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0]"
+                  : "border-[#E5E1D8] bg-[#F7F5F0] text-[#5C564E] hover:border-[#2D2A26] hover:text-[#2D2A26]"
+              }`}
+            >
+              Play {sp.name} ({sp.nameEn})
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Progress Metric Bar */}
+      <div>
+        <div className="flex items-center justify-between text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-widest mb-1.5">
+          <span>Dialogue Turn {currentStepIndex + 1} of {lines.length}</span>
+          <span className="font-mono">{Math.round(((currentStepIndex + 1) / Math.max(1, lines.length)) * 100)}% Completed</span>
+        </div>
+        <div className="w-full bg-[#E5E1D8] h-1.5">
+          <div
+            className="bg-[#2D2A26] h-1.5 transition-all duration-300"
+            style={{ width: `${((currentStepIndex + (isCompleted ? 1 : 0)) / Math.max(1, lines.length)) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Current Turn Focus Card */}
+      {!isCompleted && currentLine && (
+        <div
+          className={`p-6 border-2 transition-all ${
+            isUserTurn
+              ? "bg-[#F7F5F0] border-[#2D2A26]"
+              : "bg-[#FAFAF7] border-[#E5E1D8]"
+          }`}
+        >
+          {/* Status Indicator */}
+          <div className="flex items-center justify-between pb-3 border-b border-[#E5E1D8]">
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-2.5 h-2.5 ${
+                  isUserTurn ? "bg-[#8B7355] animate-pulse" : "bg-[#2D2A26]"
+                }`}
+              />
+              <span className="text-[10px] font-sans font-bold uppercase tracking-widest text-[#2D2A26]">
+                {isUserTurn ? `👉 Your Turn to Speak (${currentLine.speaker})` : `🤖 Gemini TTS Reciting (${currentLine.speaker})`}
+              </span>
+            </div>
+
+            {/* Reference pronunciation */}
+            <button
+              id="roleplay-listen-line"
+              onClick={() => onPlayLine(currentLine)}
+              disabled={isPlayingAuto}
+              className="flex items-center gap-1.5 px-2.5 py-1 border border-[#2D2A26] bg-[#FFFFFF] text-[10px] uppercase font-sans font-bold tracking-wider text-[#2D2A26] hover:bg-[#2D2A26] hover:text-[#F7F5F0] transition-colors cursor-pointer"
+            >
+              <Volume2 className="w-3 h-3" />
+              <span>Listen Prompt</span>
+            </button>
+          </div>
+
+          {/* Greek Text to Speak */}
+          <div className="mt-5 space-y-2">
+            <div className="text-2xl md:text-3xl font-serif font-normal text-[#2D2A26] leading-relaxed">
+              {currentLine.greekText}
+            </div>
+            <div className="text-xs font-mono text-[#5C564E] italic">
+              {currentLine.transliteration}
+            </div>
+          </div>
+
+          {/* Translations */}
+          <div className="mt-5 pt-4 border-t border-[#E5E1D8] grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-sans">
+            <div className="p-3 bg-[#FFFFFF] border border-[#E5E1D8]">
+              <span className="font-bold text-[9px] text-[#8B7355] uppercase tracking-widest block mb-0.5">
+                English Translation:
+              </span>
+              <span className="text-[#2D2A26] font-serif text-sm">
+                "{currentLine.englishTranslation}"
+              </span>
+            </div>
+
+            <div className="p-3 bg-[#FFFFFF] border border-[#E5E1D8]">
+              <span className="font-bold text-[9px] text-[#5C564E] uppercase tracking-widest block mb-0.5">
+                Modern Greek (Νέα Ελληνικά):
+              </span>
+              <span className="text-[#5C564E] italic font-sans text-xs">
+                {currentLine.modernGreekTranslation}
+              </span>
+            </div>
+          </div>
+
+          {/* Control Footer */}
+          <div className="mt-6 flex items-center justify-between pt-2">
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1 text-[10px] uppercase font-sans font-bold tracking-widest text-[#5C564E] hover:text-[#2D2A26] transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset Dialogue</span>
+            </button>
+
+            <button
+              id="btn-roleplay-next"
+              onClick={handleNextStep}
+              className="flex items-center gap-2 px-4 py-2 border border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0] text-[10px] uppercase tracking-widest font-sans font-bold hover:bg-transparent hover:text-[#2D2A26] transition-all cursor-pointer"
+            >
+              <span>{isUserTurn ? "Next Line →" : "Proceed →"}</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+
+        </div>
+      )}
+
+      {/* Completion View */}
+      {isCompleted && (
+        <div className="text-center py-10 px-6 bg-[#F7F5F0] border-2 border-[#2D2A26] space-y-4">
+          <div className="w-12 h-12 bg-[#2D2A26] text-[#F7F5F0] mx-auto flex items-center justify-center font-serif text-2xl font-bold">
+            ✓
+          </div>
+          <h3 className="text-2xl font-serif font-normal text-[#2D2A26]">
+            Καλῶς ἐποίησας! (Well recited!)
+          </h3>
+          <p className="text-[#5C564E] text-xs font-sans max-w-md mx-auto leading-relaxed">
+            You completed the recitation of {module.title} ({module.titleEn}).
+          </p>
+          <div className="pt-2 flex justify-center gap-3">
+            <button
+              onClick={handleReset}
+              className="px-4 py-2 border border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0] text-[10px] uppercase tracking-widest font-sans font-bold hover:bg-transparent hover:text-[#2D2A26] transition-colors cursor-pointer"
+            >
+              Restart Recitation
+            </button>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
+

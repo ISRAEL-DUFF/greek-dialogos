@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #F7F5F0;
+    color: #2D2A26;
+    font-family: 'EB Garamond', Georgia, Cambria, serif;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: 'EB Garamond', Georgia, serif;
+  }
+}
+
+.geometric-grid-bg {
+  background-image: radial-gradient(#2D2A26 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
