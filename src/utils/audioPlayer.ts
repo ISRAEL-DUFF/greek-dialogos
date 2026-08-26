@@ -1,6 +1,7 @@
 /**
- * Audio Player utility supporting Web Audio API for Gemini TTS 24kHz PCM and WAV audio
- * with real-time syllable-weighted word highlighting synchronization.
+ * Audio Player utility supporting Web Audio API for Gemini TTS 24kHz PCM and WAV audio,
+ * with estimated word highlighting. See calculateWordTimings for why the
+ * highlight is an approximation rather than true synchronization.
  */
 
 export interface WordTiming {
@@ -10,6 +11,21 @@ export interface WordTiming {
   endTime: number;
 }
 
+/**
+ * ESTIMATE word boundaries by distributing the clip's duration across words.
+ *
+ * This is a heuristic, not synchronization: the weights come from character
+ * count, vowel count and punctuation, and nothing here is derived from the
+ * audio itself. Error accumulates left to right, so the last words of a long
+ * line drift noticeably out of step with what is being spoken.
+ *
+ * There is no cheap way to do better. Real synchronization needs word-level
+ * timestamps from the TTS provider, which the current speech endpoint does not
+ * return. If it ever does, use them and keep this as the fallback.
+ *
+ * Documented rather than silently improved so nobody mistakes the highlight
+ * for ground truth - see docs/FIX-PLAN.md P1-4.
+ */
 export function calculateWordTimings(words: { greek: string }[], totalDuration: number): WordTiming[] {
   if (!words.length) return [];
 
@@ -48,7 +64,17 @@ export function calculateWordTimings(words: { greek: string }[], totalDuration: 
 class AudioPlayerEngine {
   private ctx: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
+  /**
+   * Decoded-buffer cache, bounded.
+   *
+   * Decoded 24kHz mono PCM costs roughly 96KB per audio-second, so an
+   * unbounded map held tens of megabytes of decoded audio for the lifetime of
+   * the page - on top of the base64 copies already in IndexedDB. IndexedDB is
+   * the durable cache; this only spares a repeat decode, so a small LRU is
+   * enough.
+   */
   private audioCache: Map<string, AudioBuffer> = new Map();
+  private static readonly MAX_DECODED_BUFFERS = 24;
   private isCurrentlyPlaying = false;
   private onEndCallbacks: Set<() => void> = new Set();
   private animationFrameId: number | null = null;
@@ -73,8 +99,13 @@ class AudioPlayerEngine {
    */
   public async decodeAudio(base64Data: string, mimeType = "audio/pcm;rate=24000"): Promise<AudioBuffer> {
     const cacheKey = `${base64Data.slice(0, 48)}_${base64Data.length}`;
-    if (this.audioCache.has(cacheKey)) {
-      return this.audioCache.get(cacheKey)!;
+    const hit = this.audioCache.get(cacheKey);
+    if (hit) {
+      // Re-insert to mark as most recently used: Map preserves insertion order,
+      // so the oldest key is always the first one.
+      this.audioCache.delete(cacheKey);
+      this.audioCache.set(cacheKey, hit);
+      return hit;
     }
 
     const binaryString = atob(base64Data);
@@ -93,8 +124,7 @@ class AudioPlayerEngine {
     if (isWav) {
       try {
         const decoded = await ctx.decodeAudioData(bytes.buffer.slice(0));
-        this.audioCache.set(cacheKey, decoded);
-        return decoded;
+        return this.remember(cacheKey, decoded);
       } catch (err) {
         console.warn("WAV decode failed, falling back to PCM parsing:", err);
       }
@@ -116,8 +146,18 @@ class AudioPlayerEngine {
       channelData[i] = intSample / 32768.0;
     }
 
-    this.audioCache.set(cacheKey, audioBuffer);
-    return audioBuffer;
+    return this.remember(cacheKey, audioBuffer);
+  }
+
+  /** Insert into the decoded-buffer cache, evicting the least recently used. */
+  private remember(key: string, buffer: AudioBuffer): AudioBuffer {
+    this.audioCache.set(key, buffer);
+    while (this.audioCache.size > AudioPlayerEngine.MAX_DECODED_BUFFERS) {
+      const oldest = this.audioCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.audioCache.delete(oldest);
+    }
+    return buffer;
   }
 
   /**
