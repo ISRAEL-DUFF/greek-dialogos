@@ -252,7 +252,7 @@ D3 splits the app into two halves that behave very differently without a network
 
 **Note on cache invalidation:** Ask AI answers are tied to module content. If a custom module is edited, its cached explanations are stale. Key them by module *content* hash, or clear a module's explanations whenever it is re-imported.
 
-### P1-8 · Vary the inter-line gap instead of a fixed 400 ms
+### P1-8 · ✅ DONE — inter-line gaps now derive from punctuation and speaker change
 **Where:** [`src/App.tsx:375`](../src/App.tsx#L375), [`src/App.tsx:295`](../src/App.tsx#L295) · **Decision:** D7
 
 `handlePlayFullDialogue` sleeps a hardcoded 400 ms between every pair of lines, and 800 ms between loop repetitions. Every turn boundary gets identical spacing — the same pause after a casual greeting as after a weighty philosophical claim. This is likely a **larger** contributor to the mechanical feel of sequential playback than intonation is, and unlike P1-9 it needs no model involvement at all.
@@ -267,7 +267,7 @@ D3 splits the app into two halves that behave very differently without a network
 
 **Verify:** a pure function `gapAfter(prevLine, nextLine, speed) → ms` with table-driven tests. Subjective A/B by ear for the final tuning.
 
-### P1-9 · Give the TTS model conversational context per line
+### P1-9 · ✅ DONE (behind a flag, default off) — contextual delivery per line
 **Where:** [`server.ts:190-273`](../server.ts#L190), [`src/App.tsx:139-180`](../src/App.tsx#L139) · **Decision:** D7
 
 Each line is synthesized in an isolated request, so the model generating Alexander's *"Χαῖρε, ὦ Σώκρατες! Εἰς τὴν ἀγοράν βαδίζω."* has never seen the question it answers. It reads a reply as a standalone sentence.
@@ -338,7 +338,7 @@ It exists in the working tree but is not committed and is not ignored (`git stat
 
 **Fix:** rename the package; keep `vite` in one list (it must stay a dependency only if the serverless bundle genuinely imports it — see P2-2, after which it belongs in `devDependencies`).
 
-### P2-6 · No test coverage on the one piece of pure logic
+### P2-6 · ✅ DONE — test suite added
 `convertToReconstructedPhonetics()` is deterministic, self-contained, and the heart of the product. It has no tests, so any regression in breathing marks, diphthongs, or iota subscript handling is invisible until someone listens.
 
 **Fix:** add a small table-driven test file — rough breathing, all six diphthongs, the aspirated stops, ζ, final-position iota subscript, capitalization, and punctuation passthrough. Wire `npm test` alongside the existing `npm run lint`.
@@ -448,6 +448,100 @@ All three items applied and verified, including in the running UI.
 
 - **Pre-cache cancellation driven in the browser.** Started a run on the 8-line default module, cancelled mid-flight: the Cancel button appeared during the run, the summary read **"Cancelled — 5 cached"**, and the cache counter moved 0/8 → **5/8** with completed lines preserved and the in-flight request abandoned.
 
+### P2-9 · Initial ῥ uppercases the following consonant
+**Where:** [`phoneticConverter.ts`](../src/utils/phoneticConverter.ts) · **Found 2026-08-26**
+
+`Ῥώμη` transcribes to `HRohmeh`. The rough-breathing `h` prefix is applied with the word's original capitalization, so the `R` is uppercased too. Expected `Hrohmeh`.
+
+Cosmetic in the UI, but this string is fed to a TTS model, and `HR` may be read as an initialism. Low frequency — word-initial ῥ is uncommon — but cheap to fix.
+
+Locked in by a characterization test in [`tests/phoneticConverter.test.ts`](../tests/phoneticConverter.test.ts) so a fix trips the test rather than passing unnoticed.
+
+### P2-10 · Rough breathing on the second element of ηυ is dropped
+**Where:** [`phoneticConverter.ts`](../src/utils/phoneticConverter.ts) · **Found 2026-08-26**
+
+`ηὗρον` → `ehuron` and `ηὕρηκα` → `ehurehka`, both missing the initial aspirate. The word-initial rough-breathing check recognizes breathing on the second element of αι and οι (`αἱ` → `hai`, `οἱ` → `hoi`) but not ηυ, so the diphthong list used by that check is incomplete.
+
+Rare in Attic prose, but wrong, and the same gap may affect other diphthongs not covered by the check. Audit the full list rather than special-casing ηυ.
+
+Also locked in by a characterization test.
+
+---
+
+## Phase 4 completion log — 2026-08-26
+
+All three items applied. **P1-9 ships disabled; the listening comparison is now yours to make.**
+
+### P2-6 — test suite
+
+53 tests, `npm test` (`node --import tsx --test`, no new dependency).
+
+- [`tests/phoneticConverter.test.ts`](../tests/phoneticConverter.test.ts) — 37 tests covering aspirated stops, ζ→zd, long vowels, all seven diphthongs, breathing marks, γγ, iota subscript, capitalization, ASCII passthrough, punctuation, and full sentences.
+- [`tests/dialogueTiming.test.ts`](../tests/dialogueTiming.test.ts) — 16 tests for P1-8.
+
+**These are characterization tests, and the file says so.** The README table and the implementation disagree, so the suite locks in *actual* behaviour to detect unintended change rather than ratifying a contested scheme. Their purpose is to make a pronunciation regression from P1-9 impossible to miss.
+
+**The README mismatch is worse than first reported.** With the full transcription scheme now probed, **eight of the table's ten rows** disagree with the code — not three:
+
+| letter | README | code |
+|---|---|---|
+| θ | `t_h` | `th` |
+| φ | `p_h` | `ph` |
+| χ | `k_h` | `kh` |
+| ζ | `zd` | `zd` ✓ |
+| αι | `eye` | `ai` |
+| ει | `ey` | `ei` |
+| οι | `oy` | `oi` |
+| αυ | `ow` | `au` |
+| ευ | `eh-oo` | `eu` |
+| rough | `h-` | `h` ✓ |
+
+The code implements scholarly transliteration; the README describes English respelling. This is not merely a doc defect: the output is read by a TTS model, and `ai`/`ei`/`oi` invite English vowel values that differ from what the table prescribes. Deciding which is correct needs ears. Tracked as **P2-4**.
+
+**Two genuine converter bugs surfaced while probing** — see **P2-9** and **P2-10**.
+
+### P1-8 — inter-line pacing
+
+New pure module [`dialogueTiming.ts`](../src/utils/dialogueTiming.ts): `gapAfter(previous, next, speed)`.
+
+- Same speaker continuing → 150 ms (one utterance, not a turn exchange)
+- After a question → 250 ms (replies come back promptly)
+- After a long statement (> 60 chars) → 600 ms
+- Otherwise → 400 ms
+- Scaled by `1/speed`, clamped to 120–900 ms
+
+Recognizes **both** `;` (U+003B) and `;` (U+037E) as question marks — the built-in modules use ASCII, but text imported from Perseus/TLG will use the Greek codepoint, and a rule keyed only on `?` would never have fired on any of this app's data.
+
+Measured on the default module: 4 of 7 gaps are post-question (it is a Socratic dialogue, so it is question-dense), cutting total inter-line silence from 2800 ms to 2200 ms.
+
+Loop pauses now scale with speed too, and a loop restart is asserted never shorter than any inter-line gap.
+
+### P1-9 — contextual delivery, default OFF
+
+- **Server**: `buildSpokenPrompt()` composes an English stage direction from `speakerName`, `speakerRole`, the line's `contextNote`, and the *previous* line's speaker and `contextNote`. `speakerName` had been accepted and discarded since the app was written; `contextNote` existed on all 17 lines and was rendered nowhere.
+- **No Greek other than the target line ever enters the prompt**, and it closes with "Speak only the following, and nothing else".
+- **Cache keys carry a variant**: `makeKey` takes a `variant` that folds in a hash of the full context fingerprint. The empty default keeps pre-existing keys byte-identical, so no already-cached audio is orphaned, and the two modes never serve each other's renderings.
+- **UI**: a `Context: ON/OFF` toggle beside the loop control, disabled during playback and pre-caching.
+
+**Verified — the leak risk did not materialize.** The danger was the model voicing the English stage direction, since nothing enforces a boundary between instruction and content. Tested a one-word line (`Χαῖρε`) against a ~60-word stage direction, three runs:
+
+```
+plain (no context)              : 1.36s
+contextual run 1                : 2.00s   1.47x
+contextual run 2                : 1.72s   1.26x
+contextual run 3                : 1.96s   1.44x
+```
+
+Reading the direction aloud would have produced 15 s or more. It does not.
+
+**Verified — pronunciation is unchanged.** `phoneticText` in the response is byte-identical between modes, confirming the transliteration is untouched; only the surrounding instruction differs.
+
+### The listening checkpoint
+
+This plan committed to shipping P1-8 and listening before P1-9. P1-9 is built but **disabled by default**, which preserves that: nothing changes until the toggle is flipped, and audio is cached per mode so the same line can be compared directly.
+
+**What to do:** play a dialogue with `Context: OFF`, then again with `Context: ON`, and decide whether the difference is audible. It may not be. Reverting P1-9 is a planned-for outcome, not a failure — the flag makes removal a one-line change.
+
 ---
 
 ## Suggested order
@@ -476,7 +570,7 @@ Stop here and confirm the app actually works end to end before touching anything
 10. **P1-3** — replace the 20 ms sleep with a generation counter.
 11. **P1-2** — cancellable pre-cache with honest failure reporting.
 
-**Phase 4 — naturalness (D7), cheapest first**
+**Phase 4 — naturalness (D7) ✅ COMPLETE (2026-08-26)**
 12. **P2-6** — phonetic converter tests. The regression net for P1-9.
 13. **P1-8** — variable inter-line gaps. **Ship and listen before starting P1-9.**
 14. **P1-9** — contextual delivery prompts, behind a flag, with the context hash added to cache keys.
