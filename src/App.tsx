@@ -27,6 +27,10 @@ export default function App() {
   const [cachedLineIds, setCachedLineIds] = useState<Set<number>>(new Set());
   const [isPrecaching, setIsPrecaching] = useState(false);
   const [precacheProgress, setPrecacheProgress] = useState<{ current: number; total: number } | null>(null);
+  const [precacheResult, setPrecacheResult] = useState<
+    { cached: number; failed: number; skipped: number; cancelled: boolean } | null
+  >(null);
+  const precacheAbortRef = useRef<AbortController | null>(null);
 
   // Dynamic speaker voices map: { [speakerName]: VoiceName }
   const [speakerVoices, setSpeakerVoices] = useState<Record<string, VoiceName>>(() => {
@@ -57,10 +61,34 @@ export default function App() {
   // Error state for playback
   const [playbackError, setPlaybackError] = useState<string | null>(null);
 
-  // Stop controller ref and loop tracker
-  const stopSequenceRef = useRef<boolean>(false);
+  /**
+   * Playback sequence generation.
+   *
+   * Every play action claims a new generation number. A running sequence
+   * compares its own generation against the current one at each await
+   * boundary and bails the moment it is superseded.
+   *
+   * This replaces a boolean stop flag that was reset after a fixed 20ms
+   * sleep. That sleep was a guess: a sequence awaiting a slow synthesis
+   * request had not reached its stop check within 20ms, so it resumed after
+   * the next sequence began and both played at once. A generation counter is
+   * correct no matter how long a fetch takes, and needs no sleep.
+   */
+  const playbackGenerationRef = useRef<number>(0);
   const isLoopingRef = useRef<boolean>(false);
   const playbackSpeedRef = useRef<number>(playbackSpeed);
+
+  /** Claim a new generation, invalidating any sequence already running. */
+  const beginPlaybackSequence = (): number => {
+    const generation = playbackGenerationRef.current + 1;
+    playbackGenerationRef.current = generation;
+    audioPlayer.stop();
+    return generation;
+  };
+
+  /** True while this sequence is still the active one. */
+  const isCurrentSequence = (generation: number): boolean =>
+    playbackGenerationRef.current === generation;
 
   useEffect(() => {
     isLoopingRef.current = isLooping;
@@ -97,14 +125,18 @@ export default function App() {
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
-      stopSequenceRef.current = true;
+      playbackGenerationRef.current += 1;
       audioPlayer.stop();
+      precacheAbortRef.current?.abort();
     };
   }, []);
 
   // Handle module selection
   const handleSelectModule = (mod: AncientGreekModule) => {
     handleStopPlayback();
+    // A pre-cache run is scoped to one module; abandon it when leaving.
+    precacheAbortRef.current?.abort();
+    setPrecacheResult(null);
     setCurrentModule(mod);
     // Update default voices for the new module's speakers
     const newVoices: Record<string, VoiceName> = {};
@@ -181,19 +213,38 @@ export default function App() {
   };
 
   /**
-   * Pre-cache all audio lines of a module for offline and instantaneous playback
+   * Pre-cache all audio lines of a module for offline and instantaneous playback.
+   *
+   * Cancellable: each iteration is a billed synthesis request, so a long run
+   * must be stoppable and must abandon its in-flight request rather than
+   * waiting for it. Failures are counted and reported instead of being
+   * swallowed to the console - a run where every request 401s previously
+   * reported as a clean completion.
    */
   const handlePrecacheAudio = async (mod: AncientGreekModule = currentModule) => {
     if (isPrecaching) return;
+
+    const controller = new AbortController();
+    precacheAbortRef.current = controller;
+
     setIsPrecaching(true);
+    setPrecacheResult(null);
     setPrecacheProgress({ current: 0, total: mod.lines.length });
 
     let current = 0;
-    for (const line of mod.lines) {
-      const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
-      const cached = await audioStorage.getCachedAudio(mod.id, line.id, voice);
+    let cached = 0;
+    let failed = 0;
+    let skipped = 0;
 
-      if (!cached) {
+    for (const line of mod.lines) {
+      if (controller.signal.aborted) break;
+
+      const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
+      const existing = await audioStorage.getCachedAudio(mod.id, line.id, voice);
+
+      if (existing) {
+        skipped++;
+      } else {
         try {
           const res = await fetch("/api/tts", {
             method: "POST",
@@ -203,7 +254,9 @@ export default function App() {
               voice,
               speakerName: line.speakerEn,
             }),
+            signal: controller.signal,
           });
+
           if (res.ok) {
             const data = await res.json();
             await audioStorage.saveCachedAudio(
@@ -214,18 +267,35 @@ export default function App() {
               data.mimeType,
               line.greekText
             );
+            cached++;
+          } else {
+            failed++;
+            const err = await res.json().catch(() => ({}));
+            console.warn(`Pre-cache failed for line #${line.id}:`, err.error || res.status);
           }
-        } catch (err) {
-          console.warn(`Failed to precache line #${line.id}:`, err);
+        } catch (err: any) {
+          // An abort is a user action, not a failure.
+          if (err?.name === "AbortError") break;
+          failed++;
+          console.warn(`Pre-cache failed for line #${line.id}:`, err);
         }
       }
+
       current++;
       setPrecacheProgress({ current, total: mod.lines.length });
     }
 
     await refreshCacheStatus(mod.id);
+
+    setPrecacheResult({ cached, failed, skipped, cancelled: controller.signal.aborted });
+    precacheAbortRef.current = null;
     setIsPrecaching(false);
     setPrecacheProgress(null);
+  };
+
+  /** Stop a pre-cache run and abandon its in-flight request. */
+  const handleCancelPrecache = () => {
+    precacheAbortRef.current?.abort();
   };
 
   /**
@@ -261,16 +331,12 @@ export default function App() {
    * Play single line with synchronized word highlighting (supports loop repetition when isLooping is enabled)
    */
   const handlePlayLine = async (line: DialogueLine) => {
-    stopSequenceRef.current = true;
-    audioPlayer.stop();
-    // Allow brief microtask for previous loop to exit
-    await new Promise((r) => setTimeout(r, 20));
-    stopSequenceRef.current = false;
+    const generation = beginPlaybackSequence();
 
     setPlaybackError(null);
 
     do {
-      if (stopSequenceRef.current) break;
+      if (!isCurrentSequence(generation)) break;
 
       setBufferingLineId(line.id);
       setIsBuffering(true);
@@ -278,7 +344,7 @@ export default function App() {
 
       try {
         const audioBuffer = await fetchLineAudioBuffer(line);
-        if (stopSequenceRef.current) break;
+        if (!isCurrentSequence(generation)) break;
 
         setBufferingLineId(null);
         setIsBuffering(false);
@@ -301,11 +367,13 @@ export default function App() {
         });
 
         // Small pause between line loops
-        if (isLoopingRef.current && !stopSequenceRef.current) {
+        if (isLoopingRef.current && isCurrentSequence(generation)) {
           await new Promise((res) => setTimeout(res, 500));
         }
       } catch (err: any) {
         console.error(err);
+        // A superseded sequence must not report its error over the new one.
+        if (!isCurrentSequence(generation)) break;
         setBufferingLineId(null);
         setIsBuffering(false);
         setActiveLineId(null);
@@ -314,9 +382,10 @@ export default function App() {
         setPlaybackError(err.message || "Speech synthesis failed");
         break;
       }
-    } while (isLoopingRef.current && !stopSequenceRef.current);
+    } while (isLoopingRef.current && isCurrentSequence(generation));
 
-    if (!isLoopingRef.current || stopSequenceRef.current) {
+    // Only clear shared playback state if no newer sequence has taken over.
+    if (isCurrentSequence(generation)) {
       setActiveLineId(null);
       setActiveWordIndex(null);
       setBufferingLineId(null);
@@ -329,10 +398,7 @@ export default function App() {
    * Play entire dialogue sequentially with live line and word highlighting (supports continuous full module loop)
    */
   const handlePlayFullDialogue = async () => {
-    stopSequenceRef.current = true;
-    audioPlayer.stop();
-    await new Promise((r) => setTimeout(r, 20));
-    stopSequenceRef.current = false;
+    const generation = beginPlaybackSequence();
 
     setIsPlaying(true);
     setPlaybackError(null);
@@ -341,7 +407,7 @@ export default function App() {
 
     do {
       for (let i = 0; i < lines.length; i++) {
-        if (stopSequenceRef.current) break;
+        if (!isCurrentSequence(generation)) break;
 
         const line = lines[i];
         setActiveLineId(line.id);
@@ -351,7 +417,7 @@ export default function App() {
 
         try {
           const audioBuffer = await fetchLineAudioBuffer(line);
-          if (stopSequenceRef.current) break;
+          if (!isCurrentSequence(generation)) break;
 
           setIsBuffering(false);
           setBufferingLineId(null);
@@ -373,35 +439,41 @@ export default function App() {
           });
 
           // Pause between dialogue turns
-          if ((i < lines.length - 1 || isLoopingRef.current) && !stopSequenceRef.current) {
+          if ((i < lines.length - 1 || isLoopingRef.current) && isCurrentSequence(generation)) {
             await new Promise((res) => setTimeout(res, 400));
           }
         } catch (err: any) {
           console.error(err);
+          // A superseded sequence must not report its error over the new one.
+          if (!isCurrentSequence(generation)) break;
           setPlaybackError(err.message || "Failed during sequential playback");
-          stopSequenceRef.current = true;
+          playbackGenerationRef.current += 1;
           break;
         }
       }
 
       // Pause between complete module loops
-      if (isLoopingRef.current && !stopSequenceRef.current) {
+      if (isLoopingRef.current && isCurrentSequence(generation)) {
         await new Promise((res) => setTimeout(res, 800));
       }
-    } while (isLoopingRef.current && !stopSequenceRef.current);
+    } while (isLoopingRef.current && isCurrentSequence(generation));
 
-    setActiveLineId(null);
-    setActiveWordIndex(null);
-    setBufferingLineId(null);
-    setIsBuffering(false);
-    setIsPlaying(false);
+    // Only clear shared playback state if no newer sequence has taken over.
+    if (isCurrentSequence(generation)) {
+      setActiveLineId(null);
+      setActiveWordIndex(null);
+      setBufferingLineId(null);
+      setIsBuffering(false);
+      setIsPlaying(false);
+    }
   };
 
   /**
    * Stop any running playback
    */
   const handleStopPlayback = () => {
-    stopSequenceRef.current = true;
+    // Claim a generation nobody is running: every live sequence is invalidated.
+    playbackGenerationRef.current += 1;
     audioPlayer.stop();
     setActiveLineId(null);
     setActiveWordIndex(null);
@@ -524,6 +596,8 @@ export default function App() {
             isPrecaching={isPrecaching}
             precacheProgress={precacheProgress}
             onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
+            onCancelPrecache={handleCancelPrecache}
+            precacheResult={precacheResult}
             onExportModule={() => handleExportCurrentModule(currentModule)}
           />
         )}
