@@ -55,8 +55,21 @@ class AudioStorageManager {
     return this.dbPromise;
   }
 
-  private makeKey(moduleId: string, lineId: number, voice: string): string {
-    return `${moduleId}__line_${lineId}__voice_${voice}`;
+  /**
+   * Cache key.
+   *
+   * `variant` distinguishes renderings of the same line in the same voice that
+   * differ in how they were synthesized — currently plain vs. contextual
+   * delivery (docs/FIX-PLAN.md P1-9). Contextual audio depends on the
+   * preceding line, so without this the cache would serve audio generated
+   * under a context that no longer applies after an edit.
+   *
+   * The empty default keeps keys byte-identical to those written before
+   * variants existed, so no already-cached audio is orphaned.
+   */
+  private makeKey(moduleId: string, lineId: number, voice: string, variant = ""): string {
+    const base = `${moduleId}__line_${lineId}__voice_${voice}`;
+    return variant ? `${base}__v_${variant}` : base;
   }
 
   /**
@@ -65,14 +78,15 @@ class AudioStorageManager {
   public async getCachedAudio(
     moduleId: string,
     lineId: number,
-    voice: string
+    voice: string,
+    variant = ""
   ): Promise<{ audioBase64: string; mimeType: string } | null> {
     try {
       const db = await this.getDB();
       return new Promise((resolve) => {
         const transaction = db.transaction([STORE_NAME], "readonly");
         const store = transaction.objectStore(STORE_NAME);
-        const key = this.makeKey(moduleId, lineId, voice);
+        const key = this.makeKey(moduleId, lineId, voice, variant);
         const request = store.get(key);
 
         request.onsuccess = () => {
@@ -106,14 +120,15 @@ class AudioStorageManager {
     voice: string,
     audioBase64: string,
     mimeType: string,
-    text?: string
+    text?: string,
+    variant = ""
   ): Promise<void> {
     try {
       const db = await this.getDB();
       return new Promise((resolve, reject) => {
         const transaction = db.transaction([STORE_NAME], "readwrite");
         const store = transaction.objectStore(STORE_NAME);
-        const key = this.makeKey(moduleId, lineId, voice);
+        const key = this.makeKey(moduleId, lineId, voice, variant);
 
         const record: AudioRecord = {
           key,

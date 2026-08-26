@@ -221,10 +221,69 @@ app.post("/api/phonetic-transcribe", (req, res) => {
   }
 });
 
+/**
+ * Build the spoken prompt for one line.
+ *
+ * The prompt is doing two jobs at once: it carries the phonetic
+ * transliteration that is the ONLY thing keeping the engine off Modern Greek
+ * phonology, and it carries delivery instructions. Adding delivery context
+ * dilutes the phonetic instruction, so contextual mode is opt-in and the
+ * phonetic clause always comes first and last.
+ *
+ * Context is expressed as ENGLISH STAGE DIRECTION ONLY. The previous line's
+ * Greek text is deliberately never included: there is no enforced boundary
+ * between "instruction" and "content to be spoken", so foreign text in the
+ * prompt risks being voiced, producing doubled audio.
+ */
+function buildSpokenPrompt({
+  phoneticText,
+  emotion,
+  context,
+}: {
+  phoneticText: string;
+  emotion?: string;
+  context?: {
+    speakerName?: string;
+    speakerRole?: string;
+    contextNote?: string;
+    previousSpeakerName?: string;
+    previousContextNote?: string;
+  };
+}): string {
+  const pronunciation = "Speak with authentic Reconstructed Attic/Erasmian Ancient Greek pronunciation";
+
+  if (!context) {
+    return emotion
+      ? `${pronunciation} (${emotion}): ${phoneticText}`
+      : `${pronunciation}: ${phoneticText}`;
+  }
+
+  const direction: string[] = [];
+
+  if (context.speakerName) {
+    direction.push(
+      context.speakerRole
+        ? `You are ${context.speakerName}, ${context.speakerRole}.`
+        : `You are ${context.speakerName}.`
+    );
+  }
+
+  if (context.previousSpeakerName && context.previousContextNote) {
+    direction.push(`You are responding to ${context.previousSpeakerName}: ${context.previousContextNote}`);
+  } else if (context.previousSpeakerName) {
+    direction.push(`You are responding to ${context.previousSpeakerName}.`);
+  }
+
+  if (context.contextNote) direction.push(context.contextNote);
+  if (emotion) direction.push(`Delivery: ${emotion}.`);
+
+  return `${pronunciation}. ${direction.join(" ")} Speak only the following, and nothing else: ${phoneticText}`;
+}
+
 // Single speaker TTS endpoint with Reconstructed Attic/Erasmian pronunciation
 app.post("/api/tts", async (req, res) => {
   try {
-    const { text, voice: rawVoice = "Fenrir", speakerName, emotion } = req.body;
+    const { text, voice: rawVoice = "Fenrir", speakerName, emotion, context } = req.body;
     if (!text) {
       return res.status(400).json({ error: "Text is required" });
     }
@@ -238,10 +297,9 @@ app.post("/api/tts", async (req, res) => {
     // to force the TTS engine to bypass Modern Greek phonology and output Reconstructed Attic / Erasmian pronunciation.
     const phoneticText = convertToReconstructedPhonetics(text);
 
-    // Spoken prompt tuned specifically for Reconstructed Attic pronunciation
-    const spokenPrompt = emotion 
-      ? `Speak with authentic Reconstructed Attic/Erasmian Ancient Greek pronunciation (${emotion}): ${phoneticText}`
-      : `Speak with authentic Reconstructed Attic/Erasmian Ancient Greek pronunciation: ${phoneticText}`;
+    // Contextual delivery is opt-in: the client sends `context` only when the
+    // experimental toggle is on, so default behaviour is byte-identical.
+    const spokenPrompt = buildSpokenPrompt({ phoneticText, emotion, context });
 
     // 1. OpenRouter TTS if OPENROUTER_API_KEY is configured
     if (isOpenRouterConfigured()) {
@@ -259,6 +317,7 @@ app.post("/api/tts", async (req, res) => {
           phoneticText,
           provider: `OpenRouter (${MODELS.openrouterTts})`,
           pronunciation: "Reconstructed Attic/Erasmian",
+          contextual: Boolean(context),
         });
       } catch (openRouterErr: any) {
         console.warn("OpenRouter TTS failed, attempting fallback to Gemini if available:", openRouterErr?.message);

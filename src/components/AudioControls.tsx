@@ -1,5 +1,5 @@
 import React from "react";
-import { Play, Square, Volume2, Users, Repeat, Download, HardDrive, Check, Loader2, X } from "lucide-react";
+import { Play, Square, Volume2, Users, Repeat, Download, HardDrive, Check, Loader2, X, MessagesSquare } from "lucide-react";
 import { VoiceName, DisplayMode, AncientGreekModule } from "../types";
 import { AVAILABLE_VOICES } from "../data/dialogueData";
 
@@ -11,6 +11,8 @@ interface AudioControlsProps {
   setPlaybackSpeed: (speed: number) => void;
   isLooping: boolean;
   onToggleLoop: () => void;
+  useContextualDelivery?: boolean;
+  onToggleContextualDelivery?: () => void;
   currentModule: AncientGreekModule;
   speakerVoices: Record<string, VoiceName>;
   onSetSpeakerVoice: (speakerName: string, voice: VoiceName) => void;
@@ -36,6 +38,8 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   setPlaybackSpeed,
   isLooping,
   onToggleLoop,
+  useContextualDelivery = false,
+  onToggleContextualDelivery,
   currentModule,
   speakerVoices,
   onSetSpeakerVoice,
@@ -144,6 +148,33 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
               {isLooping ? "ON" : "OFF"}
             </span>
           </button>
+
+          {/* Contextual delivery toggle (experimental).
+              Audio is cached separately per mode, so toggling never serves the
+              other mode's rendering - switch freely to compare by ear. */}
+          {onToggleContextualDelivery && (
+            <button
+              id="btn-toggle-contextual-delivery"
+              onClick={onToggleContextualDelivery}
+              disabled={isPlaying || isPrecaching}
+              className={`flex items-center gap-1.5 px-3 py-1.5 border text-[10px] uppercase font-sans font-bold tracking-wider transition-all cursor-pointer disabled:opacity-50 ${
+                useContextualDelivery
+                  ? "border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0] ring-1 ring-[#8B7355]"
+                  : "border-[#E5E1D8] bg-[#F7F5F0] text-[#5C564E] hover:border-[#2D2A26] hover:text-[#2D2A26]"
+              }`}
+              title={
+                useContextualDelivery
+                  ? "Contextual delivery ON (experimental): each line is synthesized knowing who is speaking and what they are answering. Audio is cached separately per mode."
+                  : "Contextual delivery OFF: each line is synthesized in isolation. Enable to have the model told who is speaking and what they are responding to."
+              }
+            >
+              <MessagesSquare className={`w-3.5 h-3.5 ${useContextualDelivery ? "text-[#8B7355]" : ""}`} />
+              <span>Context:</span>
+              <span className={useContextualDelivery ? "text-[#8B7355] font-extrabold" : "font-normal text-[#5C564E]"}>
+                {useContextualDelivery ? "ON" : "OFF"}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Voice and View Options */}
