@@ -93,9 +93,24 @@ Note the existing `transliteration` field stays exactly as it is — it is displ
 
 ## The LLM contract
 
-One call per line, at import. Model: the configured `MODELS.openrouterLlm`.
+**One call per module, not per line** — batched over all of a module's lines at once.
 
-**No new runtime dependency:** `/api/ai-import-module` already makes an LLM call. Phrasing rides the same import path. Built-in modules get their phrasing generated once and **committed as data**, so the shipped app never calls a model to speak.
+Per-line calls were the first draft of this spec and were wrong on both counts. They cost 17 calls where 3 suffice for the built-in corpus, and they are *less accurate*: disambiguating `τίς` from `τις`, or interrogative `ποῖ` from enclitic `ποι`, requires the surrounding sentence. A per-line call discards the exact context the model is being asked for.
+
+Model: the configured `MODELS.openrouterLlm`.
+
+**No new runtime dependency:** `/api/ai-import-module` already makes an LLM call and returns structured JSON. Adding a `phrasing` field to that existing schema costs **no additional call**. A separate narrowly-scoped call is the alternative — +1 per import, but a model doing one job outperforms a model doing twelve. Start folded; split only if validation failure rates demand it.
+
+### Total call budget
+
+| When | Calls |
+|---|---|
+| Playback, any line, any time | **0** |
+| Seeding the 3 built-in modules (17 lines) | **3**, one-time, committed as data |
+| A user imports a module | **0** folded, or **1** if split out |
+| After any future mapping change | **0** — regenerated from stored phrasing |
+
+The shipped app never calls a model in order to speak.
 
 ### Request
 
