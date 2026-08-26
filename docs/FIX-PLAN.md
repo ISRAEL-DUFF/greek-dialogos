@@ -213,7 +213,7 @@ Decide the wording change at minimum; the code change is optional.
 
 **Fix:** cap it (LRU, ~30 entries) or drop the map entirely — IndexedDB is already the durable cache and decode is fast.
 
-### P1-6 · Make the audio cache an actual offline store
+### P1-6 · ✅ DONE (service worker unverified) — audio cache is now a managed offline store
 **Where:** [`src/utils/audioStorage.ts`](../src/utils/audioStorage.ts) · **Decision:** D3 (offline is a goal)
 
 Audio accumulates per `(module, line, voice)` with no cap, no eviction, and no UI showing how much is stored. Switching voices multiplies entries. Crucially for D3: browsers evict an origin's storage under pressure, and they do it wholesale — a user who pre-cached a module for a flight can lose all of it silently.
@@ -228,7 +228,7 @@ Because offline is a real goal, this is no longer just hygiene:
 
 **Verify:** pre-cache a module, go offline in DevTools, hard-reload, and confirm the app loads and plays every cached line.
 
-### P1-7 · Network-dependent features have no defined offline behaviour
+### P1-7 · ✅ DONE — offline behaviour is defined and signposted
 **Where:** [`src/components/LinguisticNotes.tsx:39-66`](../src/components/LinguisticNotes.tsx#L39), [`src/components/ModuleImporter.tsx:200`](../src/components/ModuleImporter.tsx#L200), [`src/App.tsx:417`](../src/App.tsx#L417) · **Decisions:** D3, D5
 
 D3 splits the app into two halves that behave very differently without a network, and nothing in the UI currently marks the boundary:
@@ -544,6 +544,62 @@ This plan committed to shipping P1-8 and listening before P1-9. P1-9 is built bu
 
 ---
 
+## Phase 5 completion log — 2026-08-26
+
+Both items applied. **One piece could not be verified here — see the service worker note.**
+
+### P1-6 — offline storage
+
+| Piece | Where |
+|---|---|
+| `navigator.storage.persist()` requested before the first bulk download | [`audioStorage.ts`](../src/utils/audioStorage.ts), called from `handlePrecacheAudio` |
+| `getStorageStats()` — clips, bytes, per-module rollup, browser quota, persisted flag | [`audioStorage.ts`](../src/utils/audioStorage.ts) |
+| Storage UI — usage, durability warning, budget bar, per-module remove, keep-offline toggle | [`OfflineStoragePanel.tsx`](../src/components/OfflineStoragePanel.tsx) |
+| LRU eviction against a 250 MB budget, never touching kept-offline modules | `evictLeastRecentlyUsed()`, run after each pre-cache |
+| Orphan pruning — clips belonging to deleted modules | `pruneOrphans()`, run on mount |
+| App-shell service worker | [`public/sw.js`](../public/sw.js), registered in production only |
+
+Records now carry `lastAccessedAt`, updated on every cache hit as a fire-and-forget write — bookkeeping must never fail a cache read. Records written before this field existed fall back to `createdAt`.
+
+The service worker is runtime-populated rather than build-manifest driven: Vite content-hashes asset filenames, so a hand-maintained precache list would rot on the next build. It never caches `/api/` — audio and explanations have their own IndexedDB caches with their own invalidation rules, and a second, dumber copy in the worker would serve stale results those rules cannot reach.
+
+**⚠️ The service worker is unverified.** Registration fails in the preview browser used for testing:
+
+```
+TypeError: Failed to register a ServiceWorker for scope ('http://localhost:3000/')
+  with script ('http://localhost:3000/sw.js'): An unknown error occurred when fetching the script.
+```
+
+This is environmental, not a defect in the worker: a one-line minimal `sw.js` fails with the identical error, and the file is served correctly (HTTP 200, `application/javascript`, 2430 bytes, correct body). The registration code itself is confirmed to run — its own `catch` produced the warning, proving the `import.meta.env.PROD` guard evaluates true in a production build.
+
+**This must be verified in a real browser before offline study can be claimed to work.** Build, serve `dist/`, load the page, confirm a worker is active in DevTools → Application → Service Workers, then go offline and hard-reload. Everything else in D3 rests on the shell loading without a network.
+
+### P1-7 — offline behaviour
+
+- **Ask AI responses cached** in a dedicated IndexedDB store keyed by module id plus normalized question ([`explanationCache.ts`](../src/utils/explanationCache.ts)). `invalidateModule()` exists for re-import, since answers are written against a specific text.
+- **New questions blocked offline** with an explanation, rather than a raw fetch failure.
+- **Cached answers marked** "· saved answer" so a stored response is never mistaken for a fresh one.
+- **Online/offline indicator** in the header, outranking provider status — with no connection the provider is moot.
+- **Degraded-provider warning**: the header dot turns amber and reads "no fallback" when `/api/providers` reports `degraded`.
+- **`handlePlayWordTTS` wrapped** — it previously had no error handling at all, so an offline click rejected unhandled and the modal spinner stopped with no explanation.
+
+**Verified in the running app:**
+
+```
+offline event dispatched      -> header switches to "Offline • cached study only"
+ask question (online)         -> answered, 1x POST /api/gemini/explain, no cache marker
+re-ask offline, different
+  case and whitespace         -> answered from cache, "· saved answer" shown,
+                                 STILL 1x POST total — no second network call
+ask a NEW question offline    -> explanatory notice, no raw fetch error
+```
+
+The case/whitespace variation confirms question normalization works — otherwise the cache would miss on trivially different phrasings and re-bill the user.
+
+The storage panel reads: `5 clips · 1.1 MB of 2.5 GB available`, `Storage is not persistent — the browser may clear downloads when space runs low` with a Request button, and a per-module row with Keep offline / Remove.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
@@ -575,7 +631,7 @@ Stop here and confirm the app actually works end to end before touching anything
 13. **P1-8** — variable inter-line gaps. **Ship and listen before starting P1-9.**
 14. **P1-9** — contextual delivery prompts, behind a flag, with the context hash added to cache keys.
 
-**Phase 5 — offline (D3)**
+**Phase 5 — offline (D3) ✅ COMPLETE (2026-08-26, service worker unverified)**
 15. **P1-6** — offline storage foundation, starting with `navigator.storage.persist()`.
 16. **P1-7** — offline degradation, online/offline indicator, Ask AI response caching (D5).
 
