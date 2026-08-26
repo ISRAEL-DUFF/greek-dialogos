@@ -1,5 +1,5 @@
 import React from "react";
-import { Play, Square, Volume2, Users, Repeat, Download, HardDrive, Check, Loader2 } from "lucide-react";
+import { Play, Square, Volume2, Users, Repeat, Download, HardDrive, Check, Loader2, X } from "lucide-react";
 import { VoiceName, DisplayMode, AncientGreekModule } from "../types";
 import { AVAILABLE_VOICES } from "../data/dialogueData";
 
@@ -23,6 +23,8 @@ interface AudioControlsProps {
   isPrecaching?: boolean;
   precacheProgress?: { current: number; total: number } | null;
   onPrecacheAudio?: () => void;
+  onCancelPrecache?: () => void;
+  precacheResult?: { cached: number; failed: number; skipped: number; cancelled: boolean } | null;
   onExportModule?: () => void;
 }
 
@@ -46,6 +48,8 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   isPrecaching = false,
   precacheProgress = null,
   onPrecacheAudio,
+  onCancelPrecache,
+  precacheResult = null,
   onExportModule,
 }) => {
   const isFullyCached = totalLineCount > 0 && cachedLineCount >= totalLineCount;
@@ -233,6 +237,18 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
             )}
           </div>
 
+          {isPrecaching && onCancelPrecache && (
+            <button
+              id="btn-cancel-precache"
+              onClick={onCancelPrecache}
+              className="flex items-center gap-1.5 px-3 py-1 bg-[#F7F5F0] border border-[#2D2A26] text-[10px] uppercase font-sans font-bold tracking-wider hover:bg-[#2D2A26] hover:text-[#F7F5F0] transition-all cursor-pointer"
+              title="Stop caching. Lines already saved are kept."
+            >
+              <X className="w-3 h-3" />
+              <span>Cancel</span>
+            </button>
+          )}
+
           {onPrecacheAudio && !isFullyCached && (
             <button
               id="btn-precache-module-audio"
@@ -257,6 +273,24 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
             </button>
           )}
         </div>
+
+        {/* Pre-cache outcome. Reported explicitly: a run in which every request
+            failed previously finished silently and looked like a success. */}
+        {precacheResult && !isPrecaching && (
+          <div
+            className={`mt-2 px-3 py-1.5 border text-[10px] font-sans tracking-wide ${
+              precacheResult.failed > 0
+                ? "border-red-700 bg-red-50 text-red-900"
+                : "border-[#2D2A26] bg-[#F7F5F0] text-[#2D2A26]"
+            }`}
+          >
+            {precacheResult.cancelled ? "Cancelled — " : ""}
+            {precacheResult.cached} cached
+            {precacheResult.skipped > 0 ? `, ${precacheResult.skipped} already saved` : ""}
+            {precacheResult.failed > 0 ? `, ${precacheResult.failed} failed` : ""}
+            {precacheResult.failed > 0 && " — check the browser console for details."}
+          </div>
+        )}
 
         {/* Export Module Button */}
         {onExportModule && (
