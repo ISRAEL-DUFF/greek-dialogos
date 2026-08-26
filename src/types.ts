@@ -73,7 +73,14 @@ export interface AncientGreekModule {
   createdAt?: string;
 }
 
-export type VoiceName = "Fenrir" | "Puck" | "Kore" | "Charon" | "Zephyr" | "Aoede";
+/**
+ * The six prebuilt voices supported by the TTS backend.
+ * Declared as a runtime array so the server can validate incoming `voice`
+ * values against the same source of truth the client's types derive from.
+ */
+export const VOICE_NAMES = ["Fenrir", "Puck", "Kore", "Charon", "Zephyr", "Aoede"] as const;
+
+export type VoiceName = (typeof VOICE_NAMES)[number];
 
 export interface VoiceOption {
   id: VoiceName;
