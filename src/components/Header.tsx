@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Volume2, BookOpen, Sparkles, Sliders, Wand2, Compass, Cpu } from "lucide-react";
+import { Volume2, BookOpen, Sparkles, Sliders, Wand2, Compass, Cpu, WifiOff } from "lucide-react";
 import { AncientGreekModule } from "../types";
+import { useOnlineStatus } from "../utils/useOnlineStatus";
 
 export type AppTab = "dialogue" | "book" | "roleplay" | "importer" | "customTTS" | "grammar";
 
@@ -16,10 +17,13 @@ interface ProviderStatus {
   activeLlm: string;
   openrouterModel: string;
   ttsProvider: string;
+  /** True when a primary provider is configured with no fallback behind it. */
+  degraded?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, currentModule }) => {
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
     fetch("/api/providers")
@@ -56,10 +60,32 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, current
                 {currentModule?.stephanusRef || "Athens Agora • 399 BCE"}
               </div>
               <div className="text-[10px] font-sans text-[#8B7355] tracking-wider uppercase font-semibold flex items-center justify-end gap-1.5 mt-0.5">
-                {providerStatus?.openrouter ? (
+                {!isOnline ? (
+                  /* Offline is the most important thing to say, so it outranks
+                     provider status: with no connection the provider is moot. */
                   <>
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                    <span>OpenRouter • {providerStatus.openrouterModel.split("/").pop() || "LLM"} + Gemini TTS</span>
+                    <WifiOff className="w-3 h-3 text-[#8B7355]" />
+                    <span title="Reading and previously downloaded audio still work. New speech, word lookup audio, Ask AI, and module import need a connection.">
+                      Offline • cached study only
+                    </span>
+                  </>
+                ) : providerStatus?.openrouter ? (
+                  <>
+                    <span
+                      className={`inline-block w-1.5 h-1.5 rounded-full ${
+                        providerStatus.degraded ? "bg-amber-500" : "bg-emerald-600"
+                      }`}
+                    ></span>
+                    <span
+                      title={
+                        providerStatus.degraded
+                          ? "No fallback provider is configured. If OpenRouter fails or a model is withdrawn, speech and AI features stop with no second path."
+                          : "Primary and fallback providers are both configured."
+                      }
+                    >
+                      OpenRouter • {providerStatus.openrouterModel.split("/").pop() || "LLM"} + Gemini TTS
+                      {providerStatus.degraded ? " • no fallback" : ""}
+                    </span>
                   </>
                 ) : (
                   <>
