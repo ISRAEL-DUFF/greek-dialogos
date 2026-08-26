@@ -95,7 +95,7 @@ Add your API credentials:
 OPENROUTER_API_KEY="sk-or-v1-xxxxxxxxxxxxxxxxxxxx"
 
 # Optional: Preferred OpenRouter LLM model for text & morphology
-OPENROUTER_MODEL="google/gemini-2.0-flash-001"
+OPENROUTER_MODEL="google/gemini-3.7-flash"
 
 # Optional: TTS model on OpenRouter
 OPENROUTER_TTS_MODEL="google/gemini-3.1-flash-tts-preview"
@@ -152,7 +152,7 @@ This repository includes built-in Vercel support with Serverless API routing (`v
 5. **Environment Variables**:
    Add the following under **Project Settings > Environment Variables**:
    - `OPENROUTER_API_KEY`: Your OpenRouter API Key (e.g. `sk-or-v1-...`)
-   - `OPENROUTER_MODEL`: `google/gemini-2.0-flash-001` (or your preferred LLM)
+   - `OPENROUTER_MODEL`: `google/gemini-3.7-flash` (or your preferred LLM)
    - `OPENROUTER_TTS_MODEL`: `google/gemini-3.1-flash-tts-preview`
    - `GEMINI_API_KEY`: *(Optional fallback)*
 6. Click **Deploy**. Vercel will serve the static React frontend and route `/api/*` endpoints to the serverless function.

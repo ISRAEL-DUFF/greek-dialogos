@@ -61,7 +61,7 @@ async function callOpenRouterTTS({
       model,
       input: text,
       voice: voice.toLowerCase(),
-      response_format: "mp3",
+      response_format: "pcm",
     }),
   });
 
@@ -85,7 +85,7 @@ async function callOpenRouter({
   systemInstruction,
   userPrompt,
   jsonMode = false,
-  model = process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash-001",
+  model = process.env.OPENROUTER_MODEL || "google/gemini-3.7-flash",
 }: {
   systemInstruction?: string;
   userPrompt: string;
@@ -761,7 +761,7 @@ app.get("/api/providers", (req, res) => {
   let ttsProvider = "None";
 
   if (openrouter) {
-    activeLlm = `OpenRouter (${process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash-001"})`;
+    activeLlm = `OpenRouter (${process.env.OPENROUTER_MODEL || "google/gemini-3.7-flash"})`;
     ttsProvider = `OpenRouter (${process.env.OPENROUTER_TTS_MODEL || "google/gemini-3.1-flash-tts-preview"})`;
   } else if (gemini) {
     activeLlm = "Gemini 3.7 Flash";
@@ -772,7 +772,7 @@ app.get("/api/providers", (req, res) => {
     openrouter,
     gemini,
     activeLlm,
-    openrouterModel: process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash-001",
+    openrouterModel: process.env.OPENROUTER_MODEL || "google/gemini-3.7-flash",
     openrouterTtsModel: process.env.OPENROUTER_TTS_MODEL || "google/gemini-3.1-flash-tts-preview",
     ttsProvider,
   });
