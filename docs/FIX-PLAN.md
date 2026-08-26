@@ -195,7 +195,7 @@ Both play handlers set `stopSequenceRef.current = true`, call `audioPlayer.stop(
 
 **Fix:** replace the boolean ref plus sleep with a monotonically increasing generation counter. Each sequence captures its generation at entry and bails whenever `generationRef.current !== myGeneration`. No sleep, and correct regardless of how long a fetch takes.
 
-### P1-4 · Word highlighting is a length heuristic presented as synchronization
+### P1-4 · ✅ DONE (documented, not fixed) — word highlighting is now described as an estimate
 **Where:** [`src/utils/audioPlayer.ts:13-45`](../src/utils/audioPlayer.ts#L13)
 
 `calculateWordTimings()` distributes total duration by character count, vowel count, and a punctuation bonus. It is not derived from the audio. Drift accumulates across a long line, so the last words in a sentence are visibly out of step.
@@ -206,7 +206,7 @@ Both play handlers set `stopSequenceRef.current = true`, call `audioPlayer.stop(
 
 Decide the wording change at minimum; the code change is optional.
 
-### P1-5 · Unbounded in-memory audio cache
+### P1-5 · ✅ DONE — decoded-buffer cache is bounded
 **Where:** [`src/utils/audioPlayer.ts:50`](../src/utils/audioPlayer.ts#L50)
 
 `audioCache: Map<string, AudioBuffer>` grows for the lifetime of the page and is never evicted. Decoded 24 kHz mono buffers are roughly 48 KB per audio-second; a long pre-cached session holds tens of megabytes of decoded PCM on top of what IndexedDB already stores.
@@ -302,7 +302,7 @@ It exists in the working tree but is not committed and is not ignored (`git stat
 
 **Fix:** commit it.
 
-### P2-2 · Verify Vercel path handling for the API rewrite
+### P2-2 · ⚠️ PARTIALLY DONE — vite import fixed; the rewrite still needs a preview deployment
 **Where:** [`vercel.json`](../vercel.json), [`api/index.ts`](../api/index.ts)
 
 `"/api/(.*)"` rewrites to `"/api"`, which resolves to `api/index.ts` exporting the Express app. Express routes are registered at full paths (`/api/tts`, `/api/providers`). This works only if the function receives the *original* request path in `req.url` rather than the rewrite destination. Confirm on a preview deployment before relying on it.
@@ -320,7 +320,7 @@ It exists in the working tree but is not committed and is not ignored (`git stat
 
 **Fix:** report all resolved model ids from `/api/health`. Optionally add an opt-in `?probe=1` that makes one cheap live call per provider so the badge reflects reality.
 
-### P2-4 · README describes files and features that do not exist
+### P2-4 · ✅ DONE — README rewritten against the code
 **Where:** [`README.md`](../README.md)
 
 - Lists `src/data/modules.ts` and `src/utils/phonetics.ts`; the real files are `src/data/dialogueData.ts` and `src/utils/phoneticConverter.ts`.
@@ -331,7 +331,7 @@ It exists in the working tree but is not committed and is not ignored (`git stat
 
 **Fix:** correct the tree, delete the unimplemented claims, and reconcile the table against the converter.
 
-### P2-5 · Package metadata is scaffold leftovers
+### P2-5 · ✅ DONE — package renamed, duplicate dependency removed
 **Where:** [`package.json`](../package.json)
 
 `"name": "react-example"`, and `vite` is listed in both `dependencies` and `devDependencies`.
@@ -448,7 +448,7 @@ All three items applied and verified, including in the running UI.
 
 - **Pre-cache cancellation driven in the browser.** Started a run on the 8-line default module, cancelled mid-flight: the Cancel button appeared during the run, the summary read **"Cancelled — 5 cached"**, and the cache counter moved 0/8 → **5/8** with completed lines preserved and the in-flight request abandoned.
 
-### P2-9 · Initial ῥ uppercases the following consonant
+### P2-9 · ✅ DONE — initial ῥ no longer uppercases the following consonant
 **Where:** [`phoneticConverter.ts`](../src/utils/phoneticConverter.ts) · **Found 2026-08-26**
 
 `Ῥώμη` transcribes to `HRohmeh`. The rough-breathing `h` prefix is applied with the word's original capitalization, so the `R` is uppercased too. Expected `Hrohmeh`.
@@ -457,7 +457,7 @@ Cosmetic in the UI, but this string is fed to a TTS model, and `HR` may be read 
 
 Locked in by a characterization test in [`tests/phoneticConverter.test.ts`](../tests/phoneticConverter.test.ts) so a fix trips the test rather than passing unnoticed.
 
-### P2-10 · Rough breathing on the second element of ηυ is dropped
+### P2-10 · ✅ DONE — the diphthong list used by the breathing check is complete
 **Where:** [`phoneticConverter.ts`](../src/utils/phoneticConverter.ts) · **Found 2026-08-26**
 
 `ηὗρον` → `ehuron` and `ηὕρηκα` → `ehurehka`, both missing the initial aspirate. The word-initial rough-breathing check recognizes breathing on the second element of αι and οι (`αἱ` → `hai`, `οἱ` → `hoi`) but not ηυ, so the diphthong list used by that check is incomplete.
@@ -600,6 +600,56 @@ The storage panel reads: `5 clips · 1.1 MB of 2.5 GB available`, `Storage is no
 
 ---
 
+## Phase 6 completion log — 2026-08-26
+
+Cleanup. Six items closed, one partially — the Vercel rewrite still needs a deployment.
+
+### P2-9 / P2-10 — two transcription bugs, one shared root
+
+Both came from the word-initial rough-breathing logic, and fixing them changed the pronunciation of a common word:
+
+```
+Ῥώμη    HRohmeh   -> Hrohmeh
+ηὗρον   ehuron    -> hehuron
+ηὕρηκα  ehurehka  -> hehurehka
+υἱός    uios      -> huios      <- common word, silently unaspirated
+```
+
+**P2-10** was not really about ηυ. The breathing check listed only six diphthongs (`αι ει οι ου αυ ευ`); Attic has eight. Adding `υι` and `ηυ` fixed `ηὗρον` *and* `υἱός`, which had been transcribed without its aspirate all along. Auditing the whole list, as this plan specified, was what surfaced the second case.
+
+**P2-9** was a capitalization interaction: the prepended aspirate carries the word's capital, so a capitalized initial rho produced `HR`. Vowels already transcribe lowercase, which is why only rho showed it — and `HR` is read as an initialism by a TTS engine, not as an aspirated rho.
+
+**The test suite did its job.** The pre-existing `υι` case asserted `uios`, so the fix tripped it — exactly what a regression net is for. Assertions were updated in the same commit, and the "known defects" block now describes correct behaviour.
+
+### P1-5 — bounded decoded-buffer cache
+
+`audioCache` is now a 24-entry LRU. Decoded 24 kHz mono PCM costs roughly 96 KB per audio-second, so the unbounded map held tens of megabytes of decoded audio for the page's lifetime, duplicating what IndexedDB already stores durably. A `Map` preserves insertion order, so re-inserting on a hit and evicting the first key is sufficient.
+
+### P1-4 — documented rather than fixed
+
+As this plan anticipated, there is no cheap correct fix: real synchronization needs word-level timestamps the speech endpoint does not return. `calculateWordTimings` now carries a docblock saying plainly that nothing in it derives from the audio and that error accumulates left to right, and the README has a matching caveat. The claim of "word-by-word synchronized highlighting" is gone.
+
+### P2-5 — package metadata
+
+`"name": "react-example"` → `"greek-dialogos"`, and `vite` removed from `dependencies` (it remains in `devDependencies`, where a build tool belongs).
+
+### P2-2 — half done
+
+**Fixed:** `createViteServer` was a top-level import, so Vite was evaluated in the serverless bundle even though `startServer` never runs there. It is now `await import("vite")` inside the development branch. Confirmed in `dist/server.cjs`: the only remaining reference is the dynamic import inside that branch.
+
+**Still unverified:** whether `vercel.json`'s `/api/(.*)` → `/api` rewrite preserves the original request path. Express registers routes at full paths, so it works only if the function receives `/api/tts` rather than `/api`. **This cannot be settled locally — it needs a preview deployment.** Check that `GET /api/health` returns JSON rather than the SPA shell. If it does not, mount the router at `/` inside the function or switch to filesystem routing (`api/[...path].ts`). Documented in the README deployment section as well.
+
+### P2-4 — README rewritten against the code
+
+- **File tree corrected.** It listed `src/data/modules.ts` and `src/utils/phonetics.ts`, neither of which exists, and omitted nine real modules. Now matches the repository.
+- **Unimplemented claims removed**: "raw audio WAV/MP3 export" (audio leaves only as base64 inside a JSON package) and multi-speaker dialogue synthesis (deleted in P1-1).
+- **Phonetics table replaced.** The old table's `t_h` / `eye` / `ey` / `oy` / `ow` / `eh-oo` describe a scheme the code has never implemented. The new table documents actual output with a worked example per row, every one covered by a test.
+- **The open question is stated, not buried.** A dedicated section explains that the code does scholarly transliteration while the old table described English respelling, and that because the output is *read aloud*, which is correct is an empirical question needing ears.
+- **New sections** for offline study and the pacing/contextual-delivery work.
+- **Cost note** on the reasoning model, and the reminder that `.env` does not deploy.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
@@ -635,7 +685,7 @@ Stop here and confirm the app actually works end to end before touching anything
 15. **P1-6** — offline storage foundation, starting with `navigator.storage.persist()`.
 16. **P1-7** — offline degradation, online/offline indicator, Ask AI response caching (D5).
 
-**Phase 6 — cleanup, any order**
+**Phase 6 — cleanup ✅ COMPLETE except P2-2's rewrite check (2026-08-26)**
 17. P1-4 (word-timing honesty), P1-5 (in-memory cache cap), P2-2 (Vercel rewrite check), P2-4 (README drift), P2-5 (package metadata).
 
 ## Open items
