@@ -14,6 +14,7 @@ import { DialogueLine, DisplayMode, VoiceName, WordGloss, AncientGreekModule } f
 import { audioPlayer } from "./utils/audioPlayer";
 import { audioStorage } from "./utils/audioStorage";
 import { exportModuleWithAudio, exportLibraryWithAudio, downloadJsonFile } from "./utils/modulePackage";
+import { gapAfter, loopRestartGap, lineRepeatGap } from "./utils/dialogueTiming";
 import { BookOpen, Layers, Sparkles } from "lucide-react";
 
 export default function App() {
@@ -49,6 +50,16 @@ export default function App() {
   const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [isLooping, setIsLooping] = useState<boolean>(false);
+  /**
+   * Contextual delivery (docs/FIX-PLAN.md P1-9), off by default.
+   *
+   * Tells the TTS model who is speaking and what they are responding to, so a
+   * reply is not synthesized as an isolated sentence. The benefit is
+   * subjective and may be inaudible, so this stays switchable: turn it on and
+   * off on the same line to compare. Cached audio is keyed separately for each
+   * mode, so switching does not serve the other mode's rendering.
+   */
+  const [useContextualDelivery, setUseContextualDelivery] = useState<boolean>(false);
   
   // Display mode
   const [displayMode, setDisplayMode] = useState<DisplayMode>("all");
@@ -167,13 +178,53 @@ export default function App() {
   };
 
   /**
+   * Build the English stage direction for a line, plus the cache variant that
+   * identifies the resulting audio.
+   *
+   * The variant folds in the previous line's identity: contextual audio for
+   * line N depends on line N-1, so an edit upstream must not leave line N
+   * serving audio generated under the old context.
+   */
+  const buildLineContext = (line: DialogueLine, mod: AncientGreekModule) => {
+    if (!useContextualDelivery) return { context: undefined, variant: "" };
+
+    const index = mod.lines.findIndex((l) => l.id === line.id);
+    const previous = index > 0 ? mod.lines[index - 1] : null;
+    const speaker = mod.speakers.find((sp) => sp.name === line.speaker);
+
+    const context = {
+      speakerName: line.speakerEn,
+      speakerRole: speaker?.role || line.speakerRole,
+      contextNote: line.contextNote,
+      previousSpeakerName: previous?.speakerEn,
+      previousContextNote: previous?.contextNote,
+    };
+
+    // Short, stable fingerprint of everything the rendering depends on.
+    const fingerprint = JSON.stringify([
+      context.speakerName,
+      context.speakerRole,
+      context.contextNote,
+      context.previousSpeakerName,
+      context.previousContextNote,
+    ]);
+    let hash = 0;
+    for (let i = 0; i < fingerprint.length; i++) {
+      hash = (hash * 31 + fingerprint.charCodeAt(i)) | 0;
+    }
+
+    return { context, variant: `ctx${(hash >>> 0).toString(36)}` };
+  };
+
+  /**
    * Fetch TTS audio for a line with IndexedDB caching
    */
   const fetchLineAudioBuffer = async (line: DialogueLine): Promise<AudioBuffer> => {
     const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
+    const { context, variant } = buildLineContext(line, currentModule);
 
     // 1. Check IndexedDB cache first
-    const cached = await audioStorage.getCachedAudio(currentModule.id, line.id, voice);
+    const cached = await audioStorage.getCachedAudio(currentModule.id, line.id, voice, variant);
     if (cached && cached.audioBase64) {
       return await audioPlayer.decodeAudio(cached.audioBase64, cached.mimeType);
     }
@@ -186,6 +237,7 @@ export default function App() {
         text: line.greekText,
         voice,
         speakerName: line.speakerEn,
+        context,
       }),
     });
 
@@ -203,7 +255,8 @@ export default function App() {
       voice,
       data.audio,
       data.mimeType,
-      line.greekText
+      line.greekText,
+      variant
     );
 
     // Update cached lines set
@@ -240,7 +293,8 @@ export default function App() {
       if (controller.signal.aborted) break;
 
       const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
-      const existing = await audioStorage.getCachedAudio(mod.id, line.id, voice);
+      const { context, variant } = buildLineContext(line, mod);
+      const existing = await audioStorage.getCachedAudio(mod.id, line.id, voice, variant);
 
       if (existing) {
         skipped++;
@@ -253,6 +307,7 @@ export default function App() {
               text: line.greekText,
               voice,
               speakerName: line.speakerEn,
+              context,
             }),
             signal: controller.signal,
           });
@@ -265,7 +320,8 @@ export default function App() {
               voice,
               data.audio,
               data.mimeType,
-              line.greekText
+              line.greekText,
+              variant
             );
             cached++;
           } else {
@@ -368,7 +424,7 @@ export default function App() {
 
         // Small pause between line loops
         if (isLoopingRef.current && isCurrentSequence(generation)) {
-          await new Promise((res) => setTimeout(res, 500));
+          await new Promise((res) => setTimeout(res, lineRepeatGap(playbackSpeedRef.current)));
         }
       } catch (err: any) {
         console.error(err);
@@ -438,9 +494,13 @@ export default function App() {
             );
           });
 
-          // Pause between dialogue turns
+          // Pause between dialogue turns, sized from punctuation and speaker
+          // change rather than a fixed interval. See utils/dialogueTiming.
           if ((i < lines.length - 1 || isLoopingRef.current) && isCurrentSequence(generation)) {
-            await new Promise((res) => setTimeout(res, 400));
+            const nextLine = lines[i + 1] ?? (isLoopingRef.current ? lines[0] : null);
+            await new Promise((res) =>
+              setTimeout(res, gapAfter(line, nextLine, playbackSpeedRef.current))
+            );
           }
         } catch (err: any) {
           console.error(err);
@@ -454,7 +514,7 @@ export default function App() {
 
       // Pause between complete module loops
       if (isLoopingRef.current && isCurrentSequence(generation)) {
-        await new Promise((res) => setTimeout(res, 800));
+        await new Promise((res) => setTimeout(res, loopRestartGap(playbackSpeedRef.current)));
       }
     } while (isLoopingRef.current && isCurrentSequence(generation));
 
@@ -597,6 +657,8 @@ export default function App() {
             precacheProgress={precacheProgress}
             onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
             onCancelPrecache={handleCancelPrecache}
+            useContextualDelivery={useContextualDelivery}
+            onToggleContextualDelivery={() => setUseContextualDelivery((prev) => !prev)}
             precacheResult={precacheResult}
             onExportModule={() => handleExportCurrentModule(currentModule)}
           />
