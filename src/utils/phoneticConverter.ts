@@ -88,7 +88,17 @@ function convertSingleGreekWord(word: string, options: PhoneticOptions = {}): st
       if (pair === "αι") diphthongReplacement = "ai";
       else if (pair === "ει") diphthongReplacement = "ei";
       else if (pair === "οι") diphthongReplacement = "oi";
-      else if (pair === "ου") diphthongReplacement = "ou";
+      // ου is [uː]. "ou" is one of the most ambiguous vowel spellings in
+      // English — /aʊ/ (out), /uː/ (soup), /ʌ/ (touch), /oʊ/ (soul) — and its
+      // most frequent reading, /aʊ/, is the one we least want, because that is
+      // αυ's value. "oo" is near-unambiguous for /uː/ (moon, food, soon).
+      //
+      // Adopted independently of the rest of the diphthong family: this one
+      // strictly REDUCES ambiguity and collides with nothing (ο is "o", ω is
+      // "oh", υ is "u"), so it cannot make matters worse however the engine
+      // reads it. The others trade one ambiguity for another and are still
+      // pending a listening test — see docs/FIX-PLAN.md P2-4.
+      else if (pair === "ου") diphthongReplacement = "oo";
       else if (pair === "αυ") diphthongReplacement = "au";
       else if (pair === "ευ") diphthongReplacement = "eu";
 

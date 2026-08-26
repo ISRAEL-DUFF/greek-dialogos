@@ -719,7 +719,23 @@ All 17 lines change; 16 multi-word groups form. `Εἰς τὴν` → `Eistehn`,
 
 `Οὐκ ἐν τῷ` groups but `πολλῷ` stands alone: `τῷ` is accented, and only the *nominative* article is classically proclitic. Correct by the textbook, and it means real choppiness survives. Whether grouping should extend further is with the external reviewer.
 
-The diphthong respellings (`ου → oo` and family) remain unadopted — they change phonemes rather than juncture and still need the listening test. See P2-4.
+### `ου → oo` adopted; the rest of the family held
+
+The diphthong question is not uniform, and treating it as one decision was wrong.
+
+**`ου` is adopted.** It is [uː]. `ou` is among the most ambiguous vowel spellings in English — /aʊ/ (*out*), /uː/ (*soup*), /ʌ/ (*touch*), /oʊ/ (*soul*) — and its most frequent reading, /aʊ/, is precisely **αυ's** value, so the two were effectively swapped. `oo` is near-unambiguous for /uː/ and collides with nothing (ο is `o`, ω is `oh`, υ is `u`). This change strictly *reduces* ambiguity, so it cannot make matters worse however the engine reads it — an argument that does not require hearing the result. A test now asserts ου and αυ stay distinct.
+
+**The rest are held**, because each trades one ambiguity for another rather than removing it:
+
+| | current | proposed | why it is a gamble |
+|---|---|---|---|
+| αι [ai] | `ai` (English /eɪ/) | `eye` | `eye` is an English *word*; mid-token (`Kheyre`) it may be read as one |
+| ει [eː] | `ei` (/aɪ/ or /eɪ/) | `ey` | swaps one ambiguous spelling for another |
+| αυ [au] | `au` (English /ɔː/) | `ow` | `ow` is itself split — /aʊ/ (*cow*) vs /oʊ/ (*know*) |
+| ευ [eu] | `eu` | `ew` | `ew` reads as /juː/ (*few*) — inserts a glide that is not there |
+
+These need the listening test. `ου` did not.
+
 
 ---
 

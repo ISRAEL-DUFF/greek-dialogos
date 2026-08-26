@@ -52,7 +52,12 @@ describe("diphthongs", () => {
   test("οι", () => check("Ποῖ", "Poi"));
   test("αυ", () => check("αὐτός", "autos"));
   test("ευ", () => check("εὐθύς", "euthus"));
-  test("ου", () => check("οὐρανός", "ouranos"));
+  // ου is [uː] and maps to "oo", not "ou": English "ou" most often reads as
+  // /aʊ/ (out), which is αυ's value, so the two would effectively swap.
+  test("ου", () => check("οὐρανός", "ooranos"));
+  test("ου and αυ stay distinct", () => {
+    assert.notEqual(convert("οὐρανός").slice(0, 2), convert("αὐτός").slice(0, 2));
+  });
   // υἱός carries rough breathing on the iota, so it aspirates: see the
   // word-initial aspiration block below.
   test("υι", () => check("υἱός", "huios"));
@@ -118,7 +123,7 @@ describe("word-initial aspiration on diphthongs (P2-9, P2-10 — fixed)", () => 
   });
 
   test("the remaining diphthongs still aspirate correctly", () => {
-    check("οὗτος", "houtos");
+    check("οὗτος", "hootos");
     check("εὑρίσκω", "heuriskoh");
     check("αἱ", "hai");
     check("οἱ", "hoi");

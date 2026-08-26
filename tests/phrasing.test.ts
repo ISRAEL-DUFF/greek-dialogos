@@ -91,7 +91,7 @@ describe("grouping", () => {
 
 describe("seam joining", () => {
   test("consonant + vowel resyllabifies", () => {
-    assert.equal(convertToSpokenForm("οὐκ ἐν"), "ouken");
+    assert.equal(convertToSpokenForm("οὐκ ἐν"), "ooken");
   });
 
   test("the elision apostrophe does not survive into speech", () => {
@@ -105,7 +105,7 @@ describe("seam joining", () => {
   });
 
   test("phrasing can be disabled, reproducing the previous behaviour", () => {
-    assert.equal(convertToSpokenForm("οὐκ ἐν", { phrasing: false }), "ouk en");
+    assert.equal(convertToSpokenForm("οὐκ ἐν", { phrasing: false }), "ook en");
   });
 });
 
@@ -114,7 +114,7 @@ describe("regressions guarded", () => {
     // αὐτοῦ carries SMOOTH breathing; the rough breathing belongs to οὗ.
     // Fusing before transcribing produced "howtoo-oo", aspirating αὐτοῦ.
     const out = convertToSpokenForm("αὐτοῦ οὗ");
-    assert.equal(out, "autou hou");
+    assert.equal(out, "autoo hoo");
     assert.ok(!out.startsWith("h"), "aspirate leaked onto the first word");
   });
 
