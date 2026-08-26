@@ -674,6 +674,16 @@ node dist/server.cjs:  GET /api/providers     -> 200 application/json
 
 ---
 
+## Superseded — P1-9's approach to juncture
+
+The contextual-delivery work (P1-9) shipped and is flagged off. Separately, the user reported that playback pronounces every word in isolation, which contextual delivery does not address: it changes *how* a line is delivered, not how its words are joined.
+
+That defect has its own specification: **[PHRASING-SPEC.md](PHRASING-SPEC.md)**. It splits the problem by tool — an LLM decides phonological grouping at import time (validated as an exact partition of the input, with fallback to today's behaviour), while deterministic code keeps the character mapping. Handing the whole transliteration to an LLM was considered and rejected on this project's own standard: an intermittent `ῃ` error reintroduces exactly the merger that Modern pronunciation was declined for, and a learner cannot adapt to an error that appears in one line and not the next.
+
+One finding from that work belongs here as a defect in its own right: **`ου` is transcribed `ou`, which an English-oriented model reads as /aʊ/ (*out*) where it should be [uː]**, and `αυ → au` invites /ɔː/ (*caught*) where it should be [au]. The two are effectively swapped. This reframes **P2-4** — the old README table was describing English respelling, which for this pipeline may be more accurate than scholarly transliteration, not less. Tracked in the spec as the mapping-version question.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
