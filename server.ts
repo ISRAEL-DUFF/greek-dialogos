@@ -325,121 +325,14 @@ app.post("/api/tts", async (req, res) => {
   }
 });
 
-// Multi-speaker dialogue TTS endpoint with Reconstructed Attic/Erasmian pronunciation
-app.post("/api/tts-dialogue", async (req, res) => {
-  try {
-    const { dialogue, socratesVoice: rawSocratesVoice = "Fenrir", alexanderVoice: rawAlexanderVoice = "Puck" } = req.body;
-    
-    if (!dialogue || !Array.isArray(dialogue)) {
-      return res.status(400).json({ error: "Dialogue array is required" });
-    }
-
-    const socratesVoice = resolveVoice(rawSocratesVoice);
-    const alexanderVoice = resolveVoice(rawAlexanderVoice);
-    if (!socratesVoice || !alexanderVoice) {
-      return res.status(400).json({
-        error: INVALID_VOICE_ERROR,
-        received: { socratesVoice: rawSocratesVoice, alexanderVoice: rawAlexanderVoice },
-      });
-    }
-
-    // Format transcript for multi-speaker TTS with phonetic transcription
-    const promptLines = dialogue.map((line: { speaker: string; text: string }) => {
-      const normalizedSpeaker = line.speaker.includes("Σωκράτης") || line.speaker.toLowerCase().includes("socrates")
-        ? "Socrates" 
-        : "Alexander";
-      const phoneticLine = convertToReconstructedPhonetics(line.text);
-      return `${normalizedSpeaker}: ${phoneticLine}`;
-    }).join("\n");
-
-    const fullPrompt = `TTS the following Ancient Greek philosophical dialogue between Socrates and Alexander using authentic Reconstructed Attic / Erasmian pronunciation with lively and expressive cadence:\n${promptLines}`;
-
-    // 1. OpenRouter dialogue speech synthesis
-    if (isOpenRouterConfigured()) {
-      try {
-        const { audioBase64, mimeType } = await callOpenRouterTTS({
-          text: fullPrompt,
-          voice: socratesVoice,
-        });
-
-        return res.json({
-          audio: audioBase64,
-          mimeType,
-          socratesVoice,
-          alexanderVoice,
-          provider: `OpenRouter (${MODELS.openrouterTts})`,
-          pronunciation: "Reconstructed Attic/Erasmian",
-        });
-      } catch (openRouterErr: any) {
-        console.warn("OpenRouter dialogue TTS failed, attempting fallback to Gemini if available:", openRouterErr?.message);
-        if (!isGeminiConfigured()) {
-          throw openRouterErr;
-        }
-      }
-    }
-
-    // 2. Fallback to Gemini SDK
-    if (isGeminiConfigured()) {
-      const ai = getGeminiClient();
-
-      const response = await ai.models.generateContent({
-        model: MODELS.geminiTts,
-        contents: [{ parts: [{ text: fullPrompt }] }],
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            multiSpeakerVoiceConfig: {
-              speakerVoiceConfigs: [
-                {
-                  speaker: "Socrates",
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: socratesVoice },
-                  },
-                },
-                {
-                  speaker: "Alexander",
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: alexanderVoice },
-                  },
-                },
-              ],
-            },
-          },
-        },
-      });
-
-      const candidate = response.candidates?.[0];
-      const part = candidate?.content?.parts?.[0];
-      const audioData = part?.inlineData?.data;
-      const mimeType = part?.inlineData?.mimeType || "audio/pcm;rate=24000";
-
-      if (!audioData) {
-        return res.status(500).json({ error: "No multi-speaker audio was generated" });
-      }
-
-      return res.json({
-        audio: audioData,
-        mimeType,
-        socratesVoice,
-        alexanderVoice,
-        provider: `Gemini TTS multi-speaker (${MODELS.geminiTts})`,
-        pronunciation: "Reconstructed Attic/Erasmian",
-      });
-    }
-
-    return res.status(503).json({
-      error: "Dialogue synthesis is unavailable: no API key is configured. Set OPENROUTER_API_KEY (or GEMINI_API_KEY as a fallback) in your environment.",
-      ttsModel: MODELS.openrouterTts,
-      openrouterConfigured: isOpenRouterConfigured(),
-      fallbackConfigured: isGeminiConfigured(),
-    });
-  } catch (error: any) {
-    console.error("Multi-speaker TTS error:", error);
-    res.status(500).json({ 
-      error: error?.message || "Failed to generate dialogue audio" 
-    });
-  }
-});
+// NOTE: /api/tts-dialogue (multi-speaker scene synthesis) was removed here.
+// It had no caller, and it normalized every speaker to "Socrates" or
+// "Alexander", so it could not serve the 3-speaker Aesop module at all.
+// Rebuilding it was considered and rejected: Gemini's multiSpeakerVoiceConfig
+// caps at two voices, and a single merged audio blob gives up per-line word
+// highlighting, per-line caching, and single-line replay. Per-line playback
+// already assigns a distinct voice per speaker with no speaker cap.
+// See docs/FIX-PLAN.md, decisions D2/D4/D7 and item P1-1.
 
 // Helper to extract JSON from text that might be wrapped in code fences
 function parseJsonFromLlm(text: string): any {

@@ -9,7 +9,6 @@ An interactive philological reader, dialogue player, and pedagogical study works
 ### 1. 🎙️ Reconstructed Attic & Erasmian TTS Engine
 * **Authentic Classical Pronunciation**: Automatically transforms polytonic Greek into an exact Latin-phonetic IPA/Erasmian transposition before synthesis, preventing modern Greek phonological shifts (e.g. distinguishing aspirated stops $\theta, \phi, \chi$, diphthongs $\alpha\iota, \epsilon\iota, o\iota, \alpha\upsilon, \epsilon\upsilon$, and rough breathing $h-$).
 * **Multi-Voice Cast**: Rich pre-built voice characters (`Fenrir`, `Puck`, `Kore`, `Charon`, `Zephyr`, `Aoede`) mapped to philosophical persona archetypes (e.g., Socrates, Plato, Chaerephon, Alexander, Aesopic narrators).
-* **Multi-Speaker Dialogue Synthesis**: Seamless dual-speaker audio generation with natural conversational cadence, dramatic pacing, and rhetorical pauses.
 * **Granular Playback Controls**: Line-by-line playback, word-by-word synchronized audio highlighting, variable speeds ($0.75\times$, $0.85\times$, $1.0\times$, $1.25\times$), and raw audio WAV/MP3 export.
 
 ### 2. 📖 Multiple Reading & Study Modes
@@ -30,7 +29,7 @@ An interactive philological reader, dialogue player, and pedagogical study works
 * **Custom Module Persistence**: Imported and generated modules are saved locally and can be exported as JSON or shared.
 
 ### 5. 🧠 Flexible AI Provider Architecture (OpenRouter & Gemini)
-* **OpenRouter First**: Complete support for OpenRouter across both LLM intelligence (`chat/completions`) and speech synthesis (`/api/v1/audio/speech` using `google/gemini-3.1-flash-tts-preview`).
+* **OpenRouter First**: Complete support for OpenRouter across both LLM intelligence (`chat/completions`) and speech synthesis (`/api/v1/audio/speech` using `google/gemini-3.1-flash-tts-preview`, which returns 24 kHz 16-bit PCM).
 * **Gemini Native Fallback**: Seamless fallback to native `@google/genai` SDK using `GEMINI_API_KEY` if configured.
 * **Live Provider Indicator**: Real-time status in the header showing active LLM engines and TTS pipelines.
 
