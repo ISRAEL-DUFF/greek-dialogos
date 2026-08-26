@@ -15,10 +15,14 @@ import { audioPlayer } from "./utils/audioPlayer";
 import { audioStorage } from "./utils/audioStorage";
 import { exportModuleWithAudio, exportLibraryWithAudio, downloadJsonFile } from "./utils/modulePackage";
 import { gapAfter, loopRestartGap, lineRepeatGap } from "./utils/dialogueTiming";
+import { useOnlineStatus } from "./utils/useOnlineStatus";
+import { AUDIO_CACHE_BUDGET_BYTES, getKeepOfflineIds } from "./utils/offlinePrefs";
+import { OfflineStoragePanel } from "./components/OfflineStoragePanel";
 import { BookOpen, Layers, Sparkles } from "lucide-react";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>("dialogue");
+  const isOnline = useOnlineStatus();
   
   // Active Module & Library State
   const [customModules, setCustomModules] = useState<AncientGreekModule[]>([]);
@@ -113,10 +117,21 @@ export default function App() {
     setIsLooping((prev) => !prev);
   };
 
-  // Load custom modules from localStorage on mount
+  // Load custom modules from localStorage on mount, then reconcile the audio
+  // cache against them: a deleted custom module leaves clips behind that are
+  // unreachable but still count against the origin's quota, bringing eviction
+  // of everything else closer.
   useEffect(() => {
     const stored = getStoredCustomModules();
     setCustomModules(stored);
+
+    const knownIds = [...BUILTIN_MODULES, ...stored].map((m) => m.id);
+    audioStorage
+      .pruneOrphans(knownIds)
+      .then((removed) => {
+        if (removed > 0) console.info(`Removed ${removed} orphaned audio clip(s).`);
+      })
+      .catch(() => {});
   }, []);
 
   // Refresh cached line IDs when module changes
@@ -280,6 +295,11 @@ export default function App() {
     const controller = new AbortController();
     precacheAbortRef.current = controller;
 
+    // Ask for persistent storage before the first bulk download. Without it
+    // the browser may evict this origin's storage wholesale under pressure,
+    // losing a module the user deliberately downloaded.
+    await audioStorage.requestPersistentStorage();
+
     setIsPrecaching(true);
     setPrecacheResult(null);
     setPrecacheProgress({ current: 0, total: mod.lines.length });
@@ -339,6 +359,20 @@ export default function App() {
 
       current++;
       setPrecacheProgress({ current, total: mod.lines.length });
+    }
+
+    // Keep the cache within budget, never evicting modules the user marked to
+    // keep offline - automatic cleanup must not undo a deliberate download.
+    try {
+      const evicted = await audioStorage.evictLeastRecentlyUsed(
+        AUDIO_CACHE_BUDGET_BYTES,
+        [...getKeepOfflineIds(), mod.id]
+      );
+      if (evicted.removedClips > 0) {
+        console.info(`Evicted ${evicted.removedClips} least-recently-used clip(s) to stay within budget.`);
+      }
+    } catch (err) {
+      console.warn("Eviction pass failed:", err);
     }
 
     await refreshCacheStatus(mod.id);
@@ -546,6 +580,23 @@ export default function App() {
    * Pronounce a single word in the modal
    */
   const handlePlayWordTTS = async (wordText: string) => {
+    // This had no error handling: an offline click rejected unhandled and the
+    // modal's spinner simply stopped with no explanation. Route failures into
+    // the same playbackError channel everything else uses.
+    try {
+      await synthesizeAndPlayWord(wordText);
+    } catch (err: any) {
+      console.error(err);
+      setPlaybackError(
+        isOnline
+          ? err?.message || "Word pronunciation failed"
+          : "You are offline. Words that have not been synthesized before need a connection."
+      );
+      throw err;
+    }
+  };
+
+  const synthesizeAndPlayWord = async (wordText: string) => {
     const res = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -636,6 +687,7 @@ export default function App() {
 
         {/* Global Toolbar & Audio Controls (on dialogue tab cards view) */}
         {activeTab === "dialogue" && dialogueLayoutView === "cards" && (
+          <>
           <AudioControls
             isPlaying={isPlaying}
             isBuffering={isBuffering}
@@ -662,6 +714,13 @@ export default function App() {
             precacheResult={precacheResult}
             onExportModule={() => handleExportCurrentModule(currentModule)}
           />
+
+          <OfflineStoragePanel
+            modules={[...BUILTIN_MODULES, ...customModules]}
+            currentModuleId={currentModule.id}
+            onStorageChanged={() => refreshCacheStatus(currentModule.id)}
+          />
+          </>
         )}
 
         {/* Tab 1: Interactive Dialogue View */}
