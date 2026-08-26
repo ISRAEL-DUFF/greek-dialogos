@@ -845,7 +845,16 @@ app.get("/api/health", (req, res) => {
 export { app };
 
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  // Serve built assets whenever this is the bundled artifact.
+  //
+  // Keying only on NODE_ENV was wrong: `npm start` runs dist/server.cjs without
+  // setting it, so the production server took the development branch and served
+  // from source via Vite, never exercising the built assets. IS_BUNDLED is
+  // substituted at build time by esbuild, so the bundle always knows what it is,
+  // regardless of how the host sets environment variables.
+  const isBundled = process.env.IS_BUNDLED === "true";
+
+  if (!isBundled && process.env.NODE_ENV !== "production") {
     // Imported dynamically so the module is never evaluated in a serverless
     // bundle. As a top-level import it was pulled into the Vercel function
     // even though startServer never runs there, inflating cold starts.
