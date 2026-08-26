@@ -31,7 +31,7 @@ So the LLM is asked only for the thing that can be checked.
 Three stages, and the middle one never runs at playback time.
 
 ```
-IMPORT TIME (once per line, reviewable)
+IMPORT TIME (once per module, reviewable)
   Polytonic Greek
         │
         ▼
@@ -139,7 +139,7 @@ Use the structured-output path (`response_format: json_object`), which is alread
 
 ## Validation — the load-bearing part
 
-Applied to every response before it is stored. **Any failure discards the whole response for that line** and falls back; a partially-trusted grouping is not accepted.
+Applied before anything is stored. The call is batched per module, but **validation is per line**: one bad line falls back on its own and the rest of the module is kept. Within a line, any failure discards that line's grouping entirely — a partially-trusted grouping is never accepted.
 
 1. **Exact partition.** `groups.flatMap(g => g.words)` must equal the input word array — same length, same order, byte-identical strings after NFC normalization. This single check catches hallucinated words, dropped words, reordering, silent transliteration, accent "corrections", and whitespace tampering.
 2. **Closed vocabulary.** Every `join` is one of the `JoinReason` values.
