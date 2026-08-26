@@ -650,6 +650,30 @@ As this plan anticipated, there is no cheap correct fix: real synchronization ne
 
 ---
 
+## Incident — 2026-08-26: `/api/*` returning HTML locally
+
+**Reported:** module generation failed with `Failed to fetch provider status: SyntaxError: Unexpected token '<', "<!doctype "... is not valid JSON`, a 404, and `Module import error: Failed to generate module from text`.
+
+**Cause: the app was served without its backend.** `npm run preview` was `vite preview`, which serves `dist/` statically with an SPA fallback and no Express. Reproduced exactly:
+
+```
+vite preview:      GET  /api/providers        -> 200 text/html  "<!doctype html>"
+                   POST /api/ai-import-module -> 404
+node dist/server.cjs:  GET /api/providers     -> 200 application/json
+```
+
+**Worth noting: these symptoms are indistinguishable from a broken Vercel `/api/*` rewrite** — the failure mode P2-2 warns about. It was local this time. **P2-2 is still unverified**, and a deployment showing this exact console output should be diagnosed as the rewrite, not as this bug.
+
+**Fixed:**
+1. `preview` now runs `npm run build && npm run start`, so previewing a production build exercises the production path.
+2. **A second bug found while confirming it:** `npm start` runs `dist/server.cjs` without setting `NODE_ENV`, so the production server took the *development* branch and served from source through Vite, never exercising the built assets. The API happened to work, which is why it looked correct. `NODE_ENV` was the wrong signal — esbuild now substitutes `IS_BUNDLED` at build time, so the bundle knows what it is regardless of host environment, while `tsx` still gets the dev path.
+
+**Verified on the rebuilt bundle:** built assets and `sw.js` served from `dist`, `/src/main.tsx` falling through to the SPA shell (proving Vite is not running), `/api/providers` returning JSON, and module generation producing a 5-line dialogue via `google/gemini-3.7-flash`.
+
+**Lesson for P2-2:** a static-only serve and a misrouted serverless function produce identical console errors. Diagnose by checking whether the server process is answering `/api/health` with JSON, not by the browser error alone.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
