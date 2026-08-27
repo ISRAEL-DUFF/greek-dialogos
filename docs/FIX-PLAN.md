@@ -1373,13 +1373,35 @@ no current setting will ever look for it.
 `variantOf()` recovers it from the key for records written before the field
 existed, so old exports and existing caches round-trip correctly.
 
-### Not confirmed against the reported module
+### Confirmed against the reported module
 
-The user's export (`greek-module-module-symposium-aristophanes-myth.json`) sits
-on the Desktop, which macOS TCC blocks this process from reading — `ls` stats it,
-every read returns EPERM. Both defects above were found and proven by
-inspection and measurement, not by reproducing against that file. A third
-candidate remains **unverified**: `server.ts` assigns `id: line.id ?? idx + 1`
-on import with no uniqueness check, so a module whose generated lines carry
-duplicate ids would produce identical durable cache keys. Whether this module
-does is exactly what the unreadable file would settle.
+The export was moved to `docs/` and read. Defect A reproduces exactly.
+
+All six clips share one 48-character prefix (they open with 168–466 bytes of
+silence), so the key was the byte length alone. Two lines share a length:
+
+| line | speaker | bytes | b64 length | old key |
+|---|---|---|---|---|
+| 2 | Ἐρυξίμαχος | 382080 | 509440 | `AAAA…A_509440` |
+| 6 | Ἀριστοφάνης | 382080 | 509440 | `AAAA…A_509440` |
+
+Both are 7.96s to the byte; their content differs (six distinct SHA-256s). Line
+6 is the last line of the dialogue, and it was served line 2's decoded buffer —
+the reported symptom, reproduced from the user's own data. Under the new key the
+two separate (`2cmkvu1uj3vxx_509440` / `1d343kz16zic9_509440`), verified against
+these clips.
+
+**Ruled out.** Line ids in this module are unique (1–6), so the `server.ts`
+uniqueness gap played no part. It remains a latent hardening issue, not a cause
+of this bug.
+
+### Note on the third candidate
+
+`server.ts` assigns `id: line.id ?? idx + 1` on import with no uniqueness check,
+so a module whose generated lines carried duplicate ids would produce identical
+durable cache keys. This module does not, so the defect is unexercised here and
+was left alone rather than fixed speculatively alongside a confirmed cause.
+
+This export predates Defect B's fix, so its clips carry no variant and import
+under the legacy key — they will re-synthesize once on first play. Exports
+written from now on round-trip.
