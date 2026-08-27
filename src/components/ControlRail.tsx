@@ -1,7 +1,5 @@
-import React, { useEffect, useState } from "react";
-import {
-  Play, Square, Repeat, HardDrive, Loader2, X, SlidersHorizontal, Layers, BookOpen, Check,
-} from "lucide-react";
+import React from "react";
+import { Play, Square, Repeat, HardDrive, Loader2, X, Layers, BookOpen, Check } from "lucide-react";
 import { DisplayMode } from "../types";
 import { BookLayoutMode, FontSizeOption } from "./BookFormatView";
 
@@ -109,14 +107,6 @@ function Segmented<T extends string>({
  * so the reading column keeps the full width.
  */
 export const ControlRail: React.FC<ControlRailProps> = (p) => {
-  const [sheetOpen, setSheetOpen] = useState(false);
-
-  useEffect(() => {
-    if (!sheetOpen) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSheetOpen(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [sheetOpen]);
 
   const body = (
     <div className="space-y-4">
@@ -225,53 +215,12 @@ export const ControlRail: React.FC<ControlRailProps> = (p) => {
   );
 
   return (
-    <>
-      {/* Wide screens: a sticky column beside the text. */}
-      <aside className="hidden lg:block">
-        <div className="sticky top-[10.5rem] bg-[#FFFFFF] border-2 border-[#2D2A26] p-4">
-          <span className="flex items-center gap-1.5 text-[10px] uppercase font-sans font-bold tracking-[0.2em] text-[#2D2A26] border-b border-[#E5E1D8] pb-2 mb-3">
-            {p.layout === "cards" ? <Layers className="w-3.5 h-3.5 text-[#8B7355]" /> : <BookOpen className="w-3.5 h-3.5 text-[#8B7355]" />}
-            Reading
-          </span>
-          {body}
-        </div>
-      </aside>
-
-      {/* Narrow screens: a button that raises a sheet, so the text keeps the width. */}
-      <button
-        id="btn-open-controls"
-        onClick={() => setSheetOpen(true)}
-        className="lg:hidden fixed bottom-4 right-4 z-30 flex items-center gap-2 px-4 py-3 bg-[#2D2A26] text-[#F7F5F0] border border-[#2D2A26] shadow-lg text-[11px] uppercase font-sans font-bold tracking-widest cursor-pointer"
-      >
-        <SlidersHorizontal className="w-4 h-4" />
-        Controls
-      </button>
-
-      {sheetOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 flex items-end">
-          <div className="absolute inset-0 bg-[#2D2A26]/50" onClick={() => setSheetOpen(false)} aria-hidden="true" />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Reading controls"
-            className="relative w-full max-h-[80vh] overflow-y-auto bg-[#F7F5F0] border-t-2 border-[#2D2A26] p-4"
-          >
-            <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#E5E1D8]">
-              <span className="text-[10px] uppercase font-sans font-bold tracking-[0.2em] text-[#2D2A26]">
-                Reading
-              </span>
-              <button
-                onClick={() => setSheetOpen(false)}
-                aria-label="Close controls"
-                className="p-1 border border-transparent hover:border-[#8B7355] cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {body}
-          </div>
-        </div>
-      )}
-    </>
+    <div className="bg-[#FFFFFF] border-2 border-[#2D2A26] p-3">
+      <span className="flex items-center gap-1.5 text-[10px] uppercase font-sans font-bold tracking-[0.2em] text-[#2D2A26] border-b border-[#E5E1D8] pb-2 mb-3">
+        {p.layout === "cards" ? <Layers className="w-3.5 h-3.5 text-[#8B7355]" /> : <BookOpen className="w-3.5 h-3.5 text-[#8B7355]" />}
+        Reading
+      </span>
+      {body}
+    </div>
   );
 };

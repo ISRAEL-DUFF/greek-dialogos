@@ -992,6 +992,46 @@ The module title now renders once as page identity, plus once as the folio's own
 
 ---
 
+## Header removed; navigation moved to a sidebar (2026-08-27)
+
+The 160px sticky header is gone. Navigation, module picker, settings and provider status live in a left sidebar; reading controls sit beneath them.
+
+```
+                content starts at
+original              1532
+settings drawer        352
+control rail           192
+sidebar                 24
+```
+
+### Why a column rather than a bar
+
+On a reading app horizontal space is the cheaper currency. A column takes width the page was not using; a bar takes height from every screen of text. At 1440px the sidebar costs 256px of width and nothing vertical.
+
+### Two consequences the plan implied
+
+**The rail had to become global.** It rendered only on the dialogue and book tabs. Holding navigation, it must exist everywhere — a reader reaching Roleplay could otherwise not leave. Reading controls are passed in and appear only where they apply.
+
+**Mobile needed navigation in one tap.** Below `lg` the rail was a sheet behind a button; burying six destinations there taxes every move through the app. Mobile now gets a bottom bar with all six tabs — content scrolls beneath it, so it costs no reading height — with reading controls still behind a sheet, where a tap is acceptable.
+
+### What was checked before removing it
+
+Every other tab already prints the module title itself: Roleplay at line 71, Grammar at line 123, book view on its folio page. So removing the global header orphaned nothing, and only **cards** needed a title added.
+
+### Book is the default
+
+It carries every teaching feature the cards do — word glossing, per-line replay, translations, transliteration — with less chrome, so nothing pedagogical is lost. The choice persists in `localStorage`.
+
+### The `NO FALLBACK` warning survives
+
+Reduced to one row in the sidebar rather than dropped. A silent single-provider setup is how this app broke; the warning should outlive a layout change.
+
+### An unrelated defect the change exposed
+
+With book as the default, mobile opens on the folio — where the per-line **Listen Line** buttons were overflowing their cards, because the speaker row could not wrap. Fixed with `flex-wrap` and `shrink-0`; 22 cards checked, 0 overflowing. Pre-existing, but only visible once this view became what mobile users meet first.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

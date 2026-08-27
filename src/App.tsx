@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Header, AppTab } from "./components/Header";
+import { Sidebar, AppTab } from "./components/Sidebar";
 import { DialogueCard } from "./components/DialogueCard";
 import { BookFormatView, BookLayoutMode, FontSizeOption } from "./components/BookFormatView";
 import { WordGlossModal } from "./components/WordGlossModal";
@@ -81,7 +81,22 @@ export default function App() {
   
   // Display mode
   const [displayMode, setDisplayMode] = useState<DisplayMode>("all");
-  const [dialogueLayoutView, setDialogueLayoutView] = useState<"cards" | "book">("cards");
+  const [dialogueLayoutView, setDialogueLayoutView] = useState<"cards" | "book">(() => {
+    // Book is the default: it carries every teaching feature the cards do -
+    // word glossing, per-line replay, translations, transliteration - with less
+    // chrome. The choice is remembered.
+    try {
+      const saved = localStorage.getItem("greek_dialogos_layout");
+      return saved === "cards" ? "cards" : "book";
+    } catch {
+      return "book";
+    }
+  });
+
+  const handleSetLayout = (l: "cards" | "book") => {
+    setDialogueLayoutView(l);
+    try { localStorage.setItem("greek_dialogos_layout", l); } catch { /* private mode */ }
+  };
   // Book-view controls live here so the shared rail can drive them; they used
   // to be local state inside BookFormatView with their own duplicate toolbar.
   const [bookLayout, setBookLayout] = useState<BookLayoutMode>("greek-manuscript");
@@ -680,22 +695,6 @@ export default function App() {
     <div className="min-h-screen bg-[#F7F5F0] text-[#2D2A26] font-serif selection:bg-[#2D2A26] selection:text-[#F7F5F0] flex flex-col">
       
       {/* Top Header with Module Title */}
-      <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        currentModule={currentModule}
-        onOpenSettings={() => setSettingsOpen(true)}
-        moduleActions={
-          <ModuleSelector
-            compact
-            currentModule={currentModule}
-            customModules={customModules}
-            onSelectModule={handleSelectModule}
-            onOpenImporter={() => setActiveTab("importer")}
-            onCustomModulesChange={handleCustomModulesChange}
-          />
-        }
-      />
 
       <SettingsDrawer
         open={settingsOpen}
@@ -713,7 +712,59 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
+      <div className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)] items-start">
+
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          currentModule={currentModule}
+          onOpenSettings={() => setSettingsOpen(true)}
+          moduleActions={
+            <ModuleSelector
+              compact
+              currentModule={currentModule}
+              customModules={customModules}
+              onSelectModule={handleSelectModule}
+              onOpenImporter={() => setActiveTab("importer")}
+              onCustomModulesChange={handleCustomModulesChange}
+            />
+          }
+          readingControls={
+            activeTab === "dialogue" || activeTab === "book" ? (
+              <ControlRail
+                isPlaying={isPlaying}
+                isBuffering={isBuffering}
+                onPlayFullDialogue={handlePlayFullDialogue}
+                onStopPlayback={handleStopPlayback}
+                lineCount={currentModule.lines.length}
+                playbackSpeed={playbackSpeed}
+                setPlaybackSpeed={setPlaybackSpeed}
+                isLooping={isLooping}
+                onToggleLoop={handleToggleLoop}
+                layout={activeTab === "book" ? "book" : dialogueLayoutView}
+                setLayout={(l) => {
+                  if (activeTab === "book") setActiveTab("dialogue");
+                  handleSetLayout(l);
+                }}
+                displayMode={displayMode}
+                setDisplayMode={setDisplayMode}
+                bookLayout={bookLayout}
+                setBookLayout={setBookLayout}
+                fontSize={bookFontSize}
+                setFontSize={setBookFontSize}
+                showTransliteration={showTransliteration}
+                setShowTransliteration={setShowTransliteration}
+                cachedLineCount={cachedLineIds.size}
+                isPrecaching={isPrecaching}
+                precacheProgress={precacheProgress}
+                onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
+                onCancelPrecache={handleCancelPrecache}
+              />
+            ) : undefined
+          }
+        />
+
+        <main className="min-w-0 space-y-6 pb-20 lg:pb-0">
         
         {playbackError && (
           <div className="p-4 border-2 border-red-500 bg-[#FFFFFF] text-red-800 text-xs font-sans flex items-center justify-between">
@@ -734,41 +785,23 @@ export default function App() {
             measure while the controls occupy space that was empty. Below lg the
             rail collapses to a button that raises a sheet. */}
         {activeTab === "dialogue" && (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_15rem] items-start">
-            <ControlRail
-              isPlaying={isPlaying}
-              isBuffering={isBuffering}
-              onPlayFullDialogue={handlePlayFullDialogue}
-              onStopPlayback={handleStopPlayback}
-              lineCount={currentModule.lines.length}
-              playbackSpeed={playbackSpeed}
-              setPlaybackSpeed={setPlaybackSpeed}
-              isLooping={isLooping}
-              onToggleLoop={handleToggleLoop}
-              layout={dialogueLayoutView}
-              setLayout={setDialogueLayoutView}
-              displayMode={displayMode}
-              setDisplayMode={setDisplayMode}
-              bookLayout={bookLayout}
-              setBookLayout={setBookLayout}
-              fontSize={bookFontSize}
-              setFontSize={setBookFontSize}
-              showTransliteration={showTransliteration}
-              setShowTransliteration={setShowTransliteration}
-              cachedLineCount={cachedLineIds.size}
-              isPrecaching={isPrecaching}
-              precacheProgress={precacheProgress}
-              onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
-              onCancelPrecache={handleCancelPrecache}
-            />
-
-          <div className="space-y-6 lg:order-first min-w-0">
+          <div className="space-y-6">
             
             {dialogueLayoutView === "cards" ? (
               <div className="space-y-4">
-                {/* Context card removed: it repeated the module title, which the
-                    page header now carries, together with the line count and
-                    difficulty shown there. */}
+                {/* Cards has no frontispiece of its own, so it carries a slim
+                    title. The book view prints one on its folio page. */}
+                <div className="pb-1">
+                  <span className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em] block mb-1">
+                    {currentModule.author || "Classical Text"} · {currentModule.stephanusRef || currentModule.genre.toUpperCase()}
+                  </span>
+                  <h1 className="text-xl sm:text-2xl font-serif text-[#2D2A26] leading-tight">
+                    {currentModule.title}
+                  </h1>
+                  <p className="text-xs font-sans text-[#5C564E] mt-0.5">
+                    {currentModule.titleEn} · {currentModule.lines.length} lines · {currentModule.difficulty}
+                  </p>
+                </div>
 
                 {/* List of Dialogue Lines */}
                 <div className="space-y-3.5">
@@ -809,40 +842,11 @@ export default function App() {
             )}
 
           </div>
-          </div>
         )}
 
         {/* Tab: Standalone Book Edition */}
         {activeTab === "book" && (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_15rem] items-start">
-            <ControlRail
-              isPlaying={isPlaying}
-              isBuffering={isBuffering}
-              onPlayFullDialogue={handlePlayFullDialogue}
-              onStopPlayback={handleStopPlayback}
-              lineCount={currentModule.lines.length}
-              playbackSpeed={playbackSpeed}
-              setPlaybackSpeed={setPlaybackSpeed}
-              isLooping={isLooping}
-              onToggleLoop={handleToggleLoop}
-              layout="book"
-              setLayout={(l) => { if (l === "cards") { setActiveTab("dialogue"); setDialogueLayoutView("cards"); } }}
-              displayMode={displayMode}
-              setDisplayMode={setDisplayMode}
-              bookLayout={bookLayout}
-              setBookLayout={setBookLayout}
-              fontSize={bookFontSize}
-              setFontSize={setBookFontSize}
-              showTransliteration={showTransliteration}
-              setShowTransliteration={setShowTransliteration}
-              cachedLineCount={cachedLineIds.size}
-              isPrecaching={isPrecaching}
-              precacheProgress={precacheProgress}
-              onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
-              onCancelPrecache={handleCancelPrecache}
-            />
-            <div className="lg:order-first min-w-0">
-              <BookFormatView
+          <BookFormatView
                 module={currentModule}
                 isPlaying={isPlaying}
                 isBuffering={isBuffering}
@@ -859,9 +863,7 @@ export default function App() {
                 layoutMode={bookLayout}
                 fontSize={bookFontSize}
                 showTransliteration={showTransliteration}
-              />
-            </div>
-          </div>
+          />
         )}
 
         {/* Tab: AI Importer & Generator (Option 2) */}
@@ -893,7 +895,8 @@ export default function App() {
           <LinguisticNotes currentModule={currentModule} />
         )}
 
-      </main>
+        </main>
+      </div>
 
       {/* Word Morphology & Lexicon Modal */}
       <WordGlossModal

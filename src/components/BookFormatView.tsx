@@ -351,8 +351,8 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                           : "border-[#E5E1D8] hover:border-[#2D2A26] bg-[#FFFFFF]/60"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3 mb-2 pb-1.5 border-b border-[#E5E1D8]/60">
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-start justify-between gap-2 mb-2 pb-1.5 border-b border-[#E5E1D8]/60">
+                        <div className="flex flex-wrap items-center gap-2 min-w-0">
                           <span className="text-[10px] font-mono text-[#8B7355] font-bold">
                             [{stephanusSection}]
                           </span>
@@ -367,7 +367,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                         {/* Individual Line Play button */}
                         <button
                           onClick={() => onPlayLine(line)}
-                          className={`flex items-center gap-1 px-2.5 py-1 border text-[9px] uppercase font-bold tracking-widest transition-all cursor-pointer ${
+                          className={`shrink-0 flex items-center gap-1 px-2.5 py-1 border text-[9px] uppercase font-bold tracking-widest transition-all cursor-pointer ${
                             isActive
                               ? "bg-[#2D2A26] text-[#F7F5F0] border-[#2D2A26]"
                               : "border-[#E5E1D8] text-[#5C564E] hover:border-[#2D2A26] hover:text-[#2D2A26]"
