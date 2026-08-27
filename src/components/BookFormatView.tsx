@@ -135,7 +135,11 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
             {module.lines.map((line, idx) => {
               const isActive = activeLineId === line.id;
               const isFirstSpeaker = line.speaker === module.speakers[0]?.name;
-              const stephanusSection = `128${String.fromCharCode(97 + (idx % 5))}`;
+              // The line number, which is real. This previously generated
+              // "128a"–"128e" by index for every module, so Plato and Aesop
+              // both displayed a page reference belonging to neither. Line
+              // numbers are standard apparatus practice and verifiable.
+              const lineRef = String(idx + 1);
 
               return (
                 <div
@@ -156,7 +160,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                       <div className="flex items-center gap-2">
                         {showStephanusNumbers && (
                           <span className="text-[10px] font-mono text-[#8B7355] font-bold">
-                            [{stephanusSection}]
+                            {lineRef}
                           </span>
                         )}
                         <span className="text-xs uppercase font-sans font-bold tracking-[0.2em] text-[#2D2A26]">
@@ -243,7 +247,11 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
             {module.lines.map((line, idx) => {
               const isActive = activeLineId === line.id;
               const isFirstSpeaker = line.speaker === module.speakers[0]?.name;
-              const stephanusSection = `128${String.fromCharCode(97 + (idx % 5))}`;
+              // The line number, which is real. This previously generated
+              // "128a"–"128e" by index for every module, so Plato and Aesop
+              // both displayed a page reference belonging to neither. Line
+              // numbers are standard apparatus practice and verifiable.
+              const lineRef = String(idx + 1);
 
               return (
                 <div
@@ -258,7 +266,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                   <div className="flex items-center justify-between mb-2 pb-2 border-b border-[#E5E1D8]">
                     <div className="flex items-center gap-3">
                       <span className="text-[10px] font-mono text-[#8B7355] font-bold">
-                        [{stephanusSection}]
+                        {lineRef}
                       </span>
                       <span className="text-xs uppercase font-sans font-bold tracking-[0.25em] text-[#2D2A26]">
                         {line.speaker} <span className="font-mono text-[10px] text-[#5C564E]">({line.speakerEn})</span>
@@ -339,7 +347,11 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
               <div className="space-y-4">
                 {module.lines.map((line, idx) => {
                   const isActive = activeLineId === line.id;
-                  const stephanusSection = `128${String.fromCharCode(97 + (idx % 5))}`;
+                  // The line number, which is real. This previously generated
+              // "128a"–"128e" by index for every module, so Plato and Aesop
+              // both displayed a page reference belonging to neither. Line
+              // numbers are standard apparatus practice and verifiable.
+              const lineRef = String(idx + 1);
 
                   return (
                     <div
@@ -354,7 +366,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                       <div className="flex flex-wrap items-start justify-between gap-2 mb-2 pb-1.5 border-b border-[#E5E1D8]/60">
                         <div className="flex flex-wrap items-center gap-2 min-w-0">
                           <span className="text-[10px] font-mono text-[#8B7355] font-bold">
-                            [{stephanusSection}]
+                            {lineRef}
                           </span>
                           <span className="text-xs uppercase font-sans font-bold tracking-widest text-[#2D2A26]">
                             {line.speaker}
@@ -416,17 +428,69 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
           </div>
         )}
 
-        {/* Classical Apparatus Criticus (Scholarly Footnotes) */}
-        <div className="mt-12 pt-6 border-t-2 border-[#2D2A26] text-xs font-mono text-[#5C564E] space-y-1.5">
-          <div className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em] mb-2">
-            Apparatus Criticus & Philological Notes
+        {/* Philological notes.
+            Previously four notes hardcoded here — they rendered identically for
+            every module, so the Aesop fable and the Apology both displayed
+            "128a 1 Χαῖρε, ὦ φίλε", which belongs to neither. Every module
+            already carries authored notes; this reads them.
+
+            The heading no longer says "Apparatus Criticus". An apparatus
+            records variant readings across manuscript witnesses; these are
+            grammatical and cultural commentary, which is a different genre. */}
+        {module.commentary?.philologicalNotes?.length ? (
+          <div className="mt-12 pt-6 border-t-2 border-[#2D2A26]">
+            <div className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em] mb-3">
+              Philological Notes
+            </div>
+            <dl className="text-xs font-sans text-[#5C564E] space-y-1.5 leading-relaxed">
+              {module.commentary.philologicalNotes.map((note, i) => {
+                // Set as a commentary would be: line number, lemma, note.
+                // Authored citations read "Line 1 (Greeting Formula)"; the
+                // number is the only part an apparatus keeps — the topic label
+                // is editorial furniture, not a reference.
+                const lineNo = note.citation?.match(/\d+/)?.[0];
+                return (
+                  <div key={i} className="flex gap-2.5">
+                    <dt className="font-mono text-[10px] text-[#8B7355] shrink-0 w-6 text-right pt-0.5 tabular-nums">
+                      {lineNo ?? "\u00b7"}
+                    </dt>
+                    <dd className="min-w-0">
+                      <span className="font-serif text-[13px] text-[#2D2A26]">{note.greekTerm}</span>
+                      {"  "}
+                      <span>{note.commentary}</span>
+                      {note.rhetoricalDevice && (
+                        <span className="text-[#8B7355]"> ({note.rhetoricalDevice})</span>
+                      )}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
           </div>
-          <p>
-            <strong className="text-[#2D2A26]">128a 1</strong> <em>Χαῖρε, ὦ φίλε</em>: Imperativus praesentis cum vocativo. | <strong className="text-[#2D2A26]">128b 4</strong> <em>Ποῖ</em>: adverbium motus ad locum (differt a <em>ποῦ</em> ubi).
-          </p>
-          <p>
-            <strong className="text-[#2D2A26]">128c 7</strong> <em>Ἐσπέρας</em>: genitivus temporis intra quod actio fit. | <strong className="text-[#2D2A26]">128d 11</strong> <em>ποιήσεις</em>: futurum activum indicativi.
-          </p>
+        ) : null}
+
+        {/* Provenance. The page is set as a critical edition, so it must say
+            whether the text has a manuscript tradition at all — otherwise an
+            invented reference reads exactly like a genuine one. */}
+        <div className="mt-6 pt-3 border-t border-[#E5E1D8] text-[10px] font-sans text-[#5C564E] leading-relaxed">
+          {module.provenance === "transmitted" ? (
+            <span>
+              <strong className="text-[#2D2A26] uppercase tracking-wider">Transmitted text.</strong>{" "}
+              Quoted from the manuscript tradition; {module.stephanusRef} is a standard reference.
+            </span>
+          ) : module.provenance === "adapted" ? (
+            <span>
+              <strong className="text-[#2D2A26] uppercase tracking-wider">Adapted text.</strong>{" "}
+              Based on a genuine work, reworded or simplified for study. {module.stephanusRef} locates
+              the source passage; the wording here is not the transmitted text.
+            </span>
+          ) : (
+            <span>
+              <strong className="text-[#2D2A26] uppercase tracking-wider">Composed for study.</strong>{" "}
+              Written as a teaching text, not drawn from a manuscript tradition.
+              {module.stephanusRef ? ` "${module.stephanusRef}" is a stylistic label, not a citation.` : ""}
+            </span>
+          )}
         </div>
 
         {/* Book Page Footer Marker */}

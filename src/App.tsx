@@ -861,8 +861,28 @@ export default function App() {
                   <h1 className="text-xl sm:text-2xl font-serif text-[#2D2A26] leading-tight">
                     {currentModule.title}
                   </h1>
-                  <p className="text-xs font-sans text-[#5C564E] mt-0.5">
-                    {currentModule.titleEn} · {currentModule.lines.length} lines · {currentModule.difficulty}
+                  <p className="text-xs font-sans text-[#5C564E] mt-0.5 flex flex-wrap items-center gap-x-2">
+                    <span>
+                      {currentModule.titleEn} · {currentModule.lines.length} lines · {currentModule.difficulty}
+                    </span>
+                    {/* Same reason as the book view: a Stephanus-style label
+                        must not be mistaken for a citation. */}
+                    <span
+                      className="text-[9px] uppercase font-bold tracking-widest text-[#8B7355] border border-[#E5E1D8] px-1"
+                      title={
+                        currentModule.provenance === "transmitted"
+                          ? "Quoted from the manuscript tradition."
+                          : currentModule.provenance === "adapted"
+                            ? "Based on a genuine work, reworded for study."
+                            : "Written as a teaching text; not from a manuscript tradition."
+                      }
+                    >
+                      {currentModule.provenance === "transmitted"
+                        ? "Transmitted"
+                        : currentModule.provenance === "adapted"
+                          ? "Adapted"
+                          : "Composed"}
+                    </span>
                   </p>
                 </div>
 

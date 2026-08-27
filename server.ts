@@ -785,6 +785,10 @@ Return a JSON object with this structure:
     }
     parsedModule.isCustom = true;
     parsedModule.createdAt = new Date().toISOString();
+    // A generated text has no manuscript tradition, whatever the model may
+    // have claimed about it. Forced rather than trusted: the model is asked
+    // for Stephanus-style references and will happily invent one.
+    parsedModule.provenance = "composed";
 
     // Verify lines and IDs, and sanitize any voice the model invented.
     // An unrecognized voice is persisted to localStorage and then fails at

@@ -1148,6 +1148,85 @@ Eight tests cover the key logic — voice, variant, line and module all particip
 
 ---
 
+## Apparatus replaced with real notes and stated provenance (2026-08-27)
+
+The book view ended with a section headed **Apparatus Criticus & Philological Notes**. Three things were wrong with it.
+
+### It was hardcoded
+
+Four notes were literal JSX in `BookFormatView`, so **every module rendered the same ones**. Opening Aesop's fable or the *Apology* still displayed `128a 1 Χαῖρε, ὦ φίλε`, which belongs to neither.
+
+Meanwhile every module already carries authored `commentary.philologicalNotes` — with citation, term, commentary and rhetorical device — which the book view never read. It now does.
+
+### It was not an apparatus criticus
+
+An apparatus records **variant readings across manuscript witnesses**:
+
+```
+128a  ὦ φίλε ω : om. B          21d  οἶδα BTW : οἶμαι Stob.
+```
+
+What was displayed is grammatical commentary in Latin — a different genre, nearer scholia. The heading is now **Philological Notes**, which is what the content is. A true apparatus would need real collation data; it cannot be generated, and inventing it would be worse than omitting it.
+
+### Most of these texts have no manuscript tradition at all
+
+| module | reference | provenance |
+|---|---|---|
+| Dialogue of Two Friends | `Dial. Ath. 128a–129c` | **composed** — imitates a Stephanus reference, names no real work |
+| Aesop, Boreas & Helios | `Fab. Aesop. 46` | **adapted** — genuine fable (Perry 46), simplified wording |
+| Plato, *Apology* | `Apol. 21d` | **adapted** — near-Platonic but reordered; the vocative is moved and γάρ dropped |
+
+None is strictly transmitted. In a tool that sets its pages as a critical edition, a learner has no way to tell `Apol. 21d` from `Dial. Ath. 128a`, and Latin notes made both look equally authoritative.
+
+`AncientGreekModule` now records `provenance`, stated in the book view and as a badge in cards. AI-generated modules are **forced** to `"composed"` server-side rather than trusted: the generator is asked for Stephanus-style references and will happily invent one.
+
+Defaulting to `"composed"` when the field is absent is deliberate — it is the safer claim.
+
+### Verified
+
+Notes now differ per module: the *Apology* shows *"Ὦ ἄνδρες Ἀθηναῖοι: Standard formal opening for Attic oratory…"* where the default module shows its greeting note, and the hardcoded `128a 1` string is gone. The *Apology* page reads *"Adapted text. … Apol. 21d locates the source passage; the wording here is not the transmitted text."*
+
+### Left open
+
+The *Apology* module is labelled `Apol. 21d`, but its opening line corresponds to the σοφία passage nearer **20d**. Flagged in a code comment rather than changed — pinning the cited range is a philological judgement, not a code fix.
+
+---
+
+## Notes set as a commentary; fabricated section refs removed (2026-08-27)
+
+Two changes, and the second is the one that mattered more.
+
+### Notes now read like a commentary
+
+Authored citations read `Line 1 (Greeting Formula)`. A commentary keeps the number and drops the topic label, which is editorial furniture rather than a reference. The section is now a definition list — line number, lemma in Greek, note:
+
+```
+ 1   Χαῖρε (Khaîre)        Imperative of χαίρω ('rejoice!')… (Polite civic salutation)
+ 2   τὴν ἀγορὰν            The Agora was not merely a commercial marketplace…
+```
+
+The number column is monospaced and right-aligned with `tabular-nums`, so references line up down the page as they do in a printed apparatus.
+
+### Every line carried an invented page reference
+
+Found while doing the above. `stephanusSection` was:
+
+```ts
+const stephanusSection = `128${String.fromCharCode(97 + (idx % 5))}`;
+```
+
+It generated `128a`–`128e` cycling by line index **for every module, in three separate layouts**. Plato's *Apology* and Aesop's fable both displayed `[128a]` — a page reference belonging to neither, and to no real text at all, since `128` came from the invented default dialogue.
+
+Worse than the hardcoded notes: those sat once at the foot of the page, while this decorated **every line of every text** with a fabricated citation.
+
+Replaced with the actual line number, which is real, verifiable, and standard apparatus practice.
+
+### Verified
+
+Notes render as `1 / Χαῖρε (Khaîre) / Imperative of χαίρω…`, no `Line N` remains, and no `[128x]` appears anywhere in the page.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

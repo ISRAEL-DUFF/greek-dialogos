@@ -500,6 +500,9 @@ export const DEFAULT_MODULE: AncientGreekModule = {
   genre: "dialogue",
   difficulty: "Beginner",
   stephanusRef: "Dial. Ath. 128a–129c",
+  // Written for this app. "Dial. Ath. 128a–129c" imitates a Stephanus
+  // reference but names no real work, so no manuscript tradition exists.
+  provenance: "composed",
   description: "An authentic conversational encounter in Athens between the philosopher Socrates and his companion Alexander discussing daily affairs and the Agora.",
   speakers: [
     { name: "Σωκράτης", nameEn: "Socrates", role: "Athenian Philosopher", defaultVoice: "Fenrir" },
@@ -584,6 +587,9 @@ export const AESOP_WIND_SUN_MODULE: AncientGreekModule = {
   genre: "fable",
   difficulty: "Beginner",
   stephanusRef: "Fab. Aesop. 46",
+  // The fable is genuine (Perry 46) but the Greek here is simplified for
+  // beginners rather than the transmitted wording.
+  provenance: "adapted",
   description: "The classic fable demonstrating that persuasion and gentleness (the Sun) are far more powerful than violent force (the North Wind).",
   speakers: [
     { name: "Διηγητής", nameEn: "Narrator", role: "Fable Storyteller", defaultVoice: "Zephyr" },
@@ -791,6 +797,10 @@ export const PLATO_APOLOGY_MODULE: AncientGreekModule = {
   genre: "philosophy",
   difficulty: "Intermediate",
   stephanusRef: "Apol. 21d",
+  // Close to Plato but not verbatim — the vocative is moved forward and γάρ
+  // dropped in the opening line. The cited section also deserves a check
+  // against the passage actually excerpted.
+  provenance: "adapted",
   description: "Socrates' famous defense before the Athenian jury explaining why knowing that one does not know is true wisdom.",
   speakers: [
     { name: "Σωκράτης", nameEn: "Socrates", role: "Defendant & Philosopher", defaultVoice: "Fenrir" },
