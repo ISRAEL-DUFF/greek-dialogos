@@ -369,7 +369,7 @@ function hasStressAccentInRange(chars: string[], start: number, end: number): bo
  * keeps every mark attached to the word that owns it.
  */
 
-import { groupPhonologicalWords, PhraseGroup } from "./phrasing";
+import { groupPhonologicalWords, PhraseGroup } from "./phrasing.js";
 
 const VOWEL_START = /^[aeiouāēīōū]/i;
 const CONSONANT_END = /[bcdfghjklmnpqrstvwxyz]$/i;

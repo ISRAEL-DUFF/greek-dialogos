@@ -29,7 +29,7 @@
  * invented glide; and the circumflex recovers the length of α ι υ.
  */
 
-import { groupPhonologicalWords } from "./phrasing";
+import { groupPhonologicalWords } from "./phrasing.js";
 
 const ROUGH = "̔";
 const SMOOTH = "̓";

@@ -2,9 +2,9 @@ import express from "express";
 import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { convertToReconstructedPhonetics, convertToSpokenForm } from "./src/utils/phoneticConverter";
-import { convertToIPAForm } from "./src/utils/ipaConverter";
-import { VOICE_NAMES, VoiceName } from "./src/types";
+import { convertToReconstructedPhonetics, convertToSpokenForm } from "./src/utils/phoneticConverter.js";
+import { convertToIPAForm } from "./src/utils/ipaConverter.js";
+import { VOICE_NAMES, VoiceName } from "./src/types.js";
 
 dotenv.config();
 

@@ -1227,28 +1227,48 @@ Notes render as `1 / Χαῖρε (Khaîre) / Imperative of χαίρω…`, no `L
 
 ---
 
-## Vercel: function crashes on invocation (2026-08-27) — open
+## Vercel: ESM imports needed explicit extensions (2026-08-27) — FIXED
 
-**Symptom:** the app deploys and loads, but `/api/providers` and `/api/ai-import-module` both return **500**, and the providers response body begins `"A server e…"` — Vercel's own `A server error has occurred` page, not our JSON.
+**The logs named it exactly:**
 
-**What that rules in and out.** The function is being *reached*: a routing failure would return the SPA shell (`<!doctype html>`), which is the P2-2 failure mode and is not what happened. Vercel's error page means the function was invoked and crashed. And `/api/providers` only reads environment variables — reaching its handler cannot 500 — so the crash happens during **module load**, before any route runs.
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/var/task/server'
+  imported from /var/task/api/index.js
+```
 
-That also means missing environment variables are not the whole story: absent keys would return `{"openrouter": false}` with a 200, not a platform error.
+**Vercel compiles the TypeScript but does not bundle it.** `package.json` sets `"type": "module"`, so the emitted `.js` is ESM — and **Node ESM performs no extension inference**. `import app from "../server"` survives compilation unchanged and cannot resolve at runtime.
 
-**Reproduced locally? No.** `VERCEL=1 tsx -e "import('./api/index.ts')"` loads cleanly and exports a function, so the fault is environment-specific.
+It fails only when deployed because every local path fills the extension in: Vite for the frontend, `tsx` for `npm run dev`, and esbuild for `dist/server.cjs`, which bundles everything into one file so the question never arises.
 
-### Hardened regardless
+### Every import along the path, not just the first
 
-Two hazards in the startup path were unsafe in any serverless runtime:
+```
+api/index.ts        ../server                     → ../server.js
+server.ts           ./src/utils/phoneticConverter → …/phoneticConverter.js
+server.ts           ./src/utils/ipaConverter      → …/ipaConverter.js
+server.ts           ./src/types                   → ./src/types.js
+phoneticConverter   ./phrasing                    → ./phrasing.js
+ipaConverter        ./phrasing                    → ./phrasing.js
+```
 
-- The guard tested only `process.env.VERCEL`, so any other host — or a Vercel runtime not setting it — would reach `app.listen()` inside a function. Now checks `VERCEL`, `AWS_LAMBDA_FUNCTION_NAME`, `LAMBDA_TASK_ROOT` and `FUNCTION_TARGET`.
-- **`startServer()` is async and was called with no `.catch()`.** Any rejection became an unhandled promise rejection, which Node terminates the process for — surfacing as exactly this generic platform 500, during module load, with no clue as to the cause. Now caught and logged.
+Fixing only `api/index.ts` would have moved the failure one module along.
 
-### Still to determine
+### Verified by simulating the deployment
 
-The remaining suspect is the build configuration. `tsconfig.json` sets `noEmit: true`, `allowImportingTsExtensions: true` and `moduleResolution: "bundler"` — written for Vite, and not what `@vercel/node` needs when it compiles `api/index.ts` and follows `../server` into `./src/utils/*.ts`. A separate tsconfig for the function, or `includeFiles`, may be required.
+Reasoning about ESM resolution is easy to get wrong, so the fix was checked against the real mechanism: compile with `tsc` **without bundling**, into a clean directory, and load `api/index.js` with Node under `VERCEL=1`.
 
-**This needs the deployment's function logs**, which name the actual error; Vercel's error page deliberately does not. Everything above is inference from two status codes.
+```
+before   ERR_MODULE_NOT_FOUND  Cannot find module '…/server'
+after    RESOLVED OK — default export is a function
+```
+
+The intermediate state is what confirmed the diagnosis: with only the entry fixed, resolution advanced past `../server` and failed on the next unextended specifier instead.
+
+Also confirmed unaffected: frontend build, 137 tests, `dist/server.cjs` serving `/api/health`, `/api/providers` and `/` at 200, and the `tsx` dev path.
+
+### Note
+
+`api/index.ts` carries a comment saying the `.js` extension is required and must not be removed. It looks like a mistake — the file it names is `.ts` — and would otherwise be a natural thing for someone to "correct".
 
 ---
 
