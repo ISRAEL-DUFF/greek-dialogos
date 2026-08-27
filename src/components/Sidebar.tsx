@@ -122,8 +122,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
       {/* Wide screens: a sticky column. */}
-      <aside className="hidden lg:block">
-        <div className="sticky top-6 space-y-4">
+      {/* Sticky must sit on the grid item itself. A sticky child that fills its
+          parent has no room to travel, so it scrolls away — which is what the
+          previous `sticky` on this inner div did.
+          The grid uses items-start, so the aside keeps its content height while
+          its grid area spans the row, giving sticky somewhere to move.
+          max-h + overflow-y matter: the sidebar is taller than a short laptop
+          viewport, and pinning without them puts the offline controls out of
+          reach permanently. */}
+      <aside className="hidden lg:block lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
+        <div className="space-y-4">
           <div className="bg-[#FFFFFF] border-2 border-[#2D2A26] p-3 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <span className="w-8 h-8 bg-[#2D2A26] text-[#F7F5F0] flex items-center justify-center font-serif text-lg font-bold shrink-0">

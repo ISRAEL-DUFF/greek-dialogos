@@ -1032,6 +1032,35 @@ With book as the default, mobile opens on the folio — where the per-line **Lis
 
 ---
 
+## The sidebar was never actually sticky (2026-08-27)
+
+It carried `sticky top-6` and looked implemented. It was not:
+
+```
+aside height 871px · inner height 871px · viewport 800px
+aside top:  y=24  →  scroll 1500  →  −1352      (scrolled clean away)
+```
+
+**A sticky element can only travel inside its containing block, and the sticky div filled its parent exactly** — zero room to move, so it scrolled with the page. Sticky on a child that fills its parent is always a no-op; the class has to sit on the grid item.
+
+The measurement also caught a second problem that would have turned the naive fix into a regression: **the sidebar is 871px against an 800px viewport.** Pinning it without a height bound puts the offline and download controls permanently out of reach.
+
+**Fixed:** `sticky` moved to the `<aside>` itself, with `max-h-[calc(100vh-3rem)]` and `overflow-y-auto` so a sidebar taller than the screen scrolls internally. The grid's existing `items-start` is what lets the aside keep its content height while its grid area spans the row, giving sticky somewhere to travel.
+
+```
+scrollY     0    400    900   1376
+asideTop   24     24     24   −112
+pinned      ✓      ✓      ✓      ✗
+```
+
+The release at maximum scroll is inherent, not a bug: an 88px footer sits after the grid, so the grid ends before the viewport does and sticky clamps to its container. Every sticky sidebar behaves this way, and the alternative — `fixed` — would overlap the footer instead.
+
+### A note on the verification
+
+The first diagnostic reported the grid bottom at 2040 in a viewport of 800. That was impossible, and the cause was mine: the rects were read inside the return object, which evaluated *after* the scroll had been reset to zero. Re-measured properly. Third time this session an initially convincing check turned out to be measuring the wrong moment.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
