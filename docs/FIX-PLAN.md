@@ -1061,6 +1061,42 @@ The first diagnostic reported the grid bottom at 2040 in a viewport of 800. That
 
 ---
 
+## Word highlighting weighted from the spoken form (2026-08-27)
+
+**Reported:** highlighting tracks correctly under Modern pronunciation but drifts under Erasmian and Reconstructed.
+
+**Cause:** `calculateWordTimings` weighted each word from `w.greek` — Greek character count, Greek vowel count, punctuation. In Modern the string sent to the engine *is* the Greek, so the estimate matched its input. In the other two schemes we send a transformed string, and the transformation is exactly what changes relative durations: `η→eh` and `ω→oh` add characters without adding syllables, while IPA writes vowel length as `ː`, one character denoting roughly double the time.
+
+**Fixed:** weights now come from the string the engine actually reads, with duration-aware terms — `ː` adds, stress marks (`ˈ ˌ`) add nothing, non-syllabic glides subtract, and aspiration is excluded from raw length.
+
+### Modern is unchanged by construction, not by luck
+
+Greek in NFC contains no stress, length, non-syllabic or aspiration marks, so every new term evaluates to zero and the formula reduces to `length + 0.8·vowels` (+3.5 punctuation) — the original. A test asserts this against the previous formula reproduced verbatim, and a second asserts identical timings whether a spoken form is supplied or omitted.
+
+### The first measurement was wrong, and said the opposite
+
+Scoring the new weights against **character-count share** suggested Reconstructed had got *worse* (10pp → 17pp). That yardstick is unsound for IPA, where `ˈ`, `ʰ` and `̯` are characters carrying no duration.
+
+Re-measured against **real audio**, synthesising each word and timing it:
+
+```
+                 old error   new error
+Erasmian            32pp   →   30pp
+Reconstructed       29pp   →   23pp
+```
+
+Reconstructed improves clearly; Erasmian marginally.
+
+### What the audio also revealed
+
+Short words are badly underestimated in every mode: `ὦ` takes **14–17%** of the line but is predicted at **6%**. Duration has a fixed articulation overhead that no length-proportional model captures.
+
+Adding a constant per word would likely help more than the notation change did — but it would alter Modern's relative weights, so it breaks the invariant this change was asked to preserve. **Left undone deliberately**; it needs its own decision.
+
+Two caveats on the ground truth: durations were measured on **isolated** words, which overstates short ones because connected speech compresses them; and errors remain large in absolute terms. The underlying limitation from **P1-4** stands — nothing here derives from the audio, and only word-level timestamps from the provider would make this exact.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

@@ -12,38 +12,74 @@ export interface WordTiming {
 }
 
 /**
+ * Vowels across every notation we emit: Greek (Modern), Latin respelling
+ * (Erasmian) and IPA (Reconstructed). A string only ever contains one of
+ * these alphabets, so there is no double counting.
+ */
+const VOWEL_PATTERN =
+  /[aeiouy]|[αειηουωάέήίόύώὰὲὴὶὸὺὼᾶῆῖῦῶ]|[ɛɔɑæøœʌəɨʉɯ]/gi;
+
+/** Stress marks: positional, no duration of their own. */
+const STRESS_MARKS = /[ˈˌ]/g;
+/** Length mark: a long vowel takes roughly twice the time of a short one. */
+const LENGTH_MARK = /ː/g;
+/** Non-syllabic mark: the second element of a diphthong, shorter than a vowel. */
+const NONSYLLABIC = /\u032F/g;
+/** Aspiration: real but brief. */
+const ASPIRATION = /ʰ/g;
+
+/**
+ * Relative duration of one spoken token.
+ *
+ * IMPORTANT — this must reduce exactly to the previous Greek-only formula when
+ * given Greek text, because that is what Modern pronunciation sends and its
+ * highlighting was correct. Greek in NFC contains no stress, length,
+ * non-syllabic or aspiration marks, so every term added for the other
+ * notations evaluates to zero and the result is `length + 0.8·vowels`
+ * (+3.5 for punctuation) as before.
+ */
+export function spokenWeight(text: string): number {
+  const raw = text.trim();
+  const core = raw.replace(STRESS_MARKS, "");
+
+  const longMarks = (core.match(LENGTH_MARK) || []).length;
+  const glides = (core.match(NONSYLLABIC) || []).length;
+
+  // Modifier symbols carry duration through their own terms, not through length.
+  const base = Math.max(
+    core.replace(LENGTH_MARK, "").replace(NONSYLLABIC, "").replace(ASPIRATION, "").length,
+    2
+  );
+  const vowels = (core.match(VOWEL_PATTERN) || []).length;
+
+  let weight = base + vowels * 0.8 + longMarks * 1.5 - glides * 0.4;
+  if (/[;.,·:!?]/.test(raw)) weight += 3.5;
+  return Math.max(weight, 1);
+}
+
+/**
  * ESTIMATE word boundaries by distributing the clip's duration across words.
  *
- * This is a heuristic, not synchronization: the weights come from character
- * count, vowel count and punctuation, and nothing here is derived from the
- * audio itself. Error accumulates left to right, so the last words of a long
- * line drift noticeably out of step with what is being spoken.
+ * Weighted from the string the engine actually READ, not from the Greek source.
+ * Those differ in two of the three pronunciation schemes, and the difference is
+ * exactly what changes relative durations: η→"eh" and ω→"oh" add characters
+ * without adding syllables, while IPA writes vowel length as "ː" — a single
+ * character denoting roughly double the time. Weighting from the Greek made the
+ * highlighting correct in Modern and systematically wrong in the other two.
  *
- * There is no cheap way to do better. Real synchronization needs word-level
- * timestamps from the TTS provider, which the current speech endpoint does not
- * return. If it ever does, use them and keep this as the fallback.
- *
- * Documented rather than silently improved so nobody mistakes the highlight
- * for ground truth - see docs/FIX-PLAN.md P1-4.
+ * Still an estimate: nothing here is derived from the audio, so error
+ * accumulates left to right. Real synchronisation needs word-level timestamps
+ * the speech endpoint does not return. See docs/FIX-PLAN.md P1-4.
  */
-export function calculateWordTimings(words: { greek: string }[], totalDuration: number): WordTiming[] {
+export function calculateWordTimings(
+  words: { greek: string; spoken?: string }[],
+  totalDuration: number
+): WordTiming[] {
   if (!words.length) return [];
 
-  // Calculate weights based on character length, vowels/diphthongs, and punctuation pauses
-  const weights = words.map((w) => {
-    const raw = w.greek.trim();
-    let weight = Math.max(raw.length, 2);
-    
-    // Add extra pause duration for punctuation marks (; . , · :)
-    if (/[;.,·:!?]/.test(raw)) {
-      weight += 3.5;
-    }
-    // Boost longer polysyllabic words
-    const vowelCount = (raw.match(/[αειηουωάέήίόύώὰὲὴὶὸὺὼᾶῆῖῦῶ]/gi) || []).length;
-    weight += vowelCount * 0.8;
-
-    return weight;
-  });
+  // Fall back to the Greek when no spoken form is supplied, so a caller that
+  // predates this behaves exactly as before.
+  const weights = words.map((w) => spokenWeight(w.spoken ?? w.greek));
 
   const totalWeight = weights.reduce((sum, w) => sum + w, 0) || 1;
   let currentStart = 0;
@@ -167,7 +203,7 @@ class AudioPlayerEngine {
     buffer: AudioBuffer,
     speed = 1.0,
     onEnded?: () => void,
-    words?: { greek: string }[],
+    words?: { greek: string; spoken?: string }[],
     onWordChange?: (wordIndex: number, progress: number) => void
   ): void {
     this.stop();

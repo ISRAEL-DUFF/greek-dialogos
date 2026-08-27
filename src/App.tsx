@@ -11,6 +11,8 @@ import { ModuleImporter } from "./components/ModuleImporter";
 import { DEFAULT_MODULE, BUILTIN_MODULES, getStoredCustomModules } from "./data/dialogueData";
 import { DialogueLine, DisplayMode, VoiceName, WordGloss, AncientGreekModule } from "./types";
 import { audioPlayer } from "./utils/audioPlayer";
+import { convertToSpokenForm } from "./utils/phoneticConverter";
+import { convertToIPAForm } from "./utils/ipaConverter";
 import { audioStorage } from "./utils/audioStorage";
 import { exportModuleWithAudio, exportLibraryWithAudio, downloadJsonFile } from "./utils/modulePackage";
 import { gapAfter, loopRestartGap, lineRepeatGap } from "./utils/dialogueTiming";
@@ -266,6 +268,34 @@ export default function App() {
   };
 
   /**
+   * The words of a line paired with the string the engine will actually read.
+   *
+   * Word highlighting is timed from this rather than from the Greek: the two
+   * differ in Erasmian and Reconstructed, and the difference is exactly what
+   * changes relative durations. In Modern the spoken form IS the Greek, so this
+   * returns the source text and the timing is unchanged.
+   *
+   * Converted per word: fusion joins tokens across word boundaries, but the
+   * highlight still tracks one Greek word at a time.
+   */
+  const wordsWithSpokenForm = (line: DialogueLine) => {
+    const scheme = speechSettings.pronunciation;
+    return line.words.map((w) => ({
+      ...w,
+      spoken:
+        scheme === "modern"
+          ? w.greek
+          : scheme === "reconstructed"
+            ? convertToIPAForm(w.greek, { phrasing: false })
+            : convertToSpokenForm(w.greek, {
+                phrasing: false,
+                preserveAccents: true,
+                stressDensity: speechSettings.stressDensity,
+              }),
+    }));
+  };
+
+  /**
    * Fetch TTS audio for a line with IndexedDB caching
    */
   const fetchLineAudioBuffer = async (line: DialogueLine): Promise<AudioBuffer> => {
@@ -493,7 +523,7 @@ export default function App() {
               setActiveWordIndex(null);
               resolve();
             },
-            line.words,
+            wordsWithSpokenForm(line),
             (wordIndex) => {
               setActiveWordIndex(wordIndex);
             }
@@ -565,7 +595,7 @@ export default function App() {
                 setActiveWordIndex(null);
                 resolve();
               },
-              line.words,
+              wordsWithSpokenForm(line),
               (wordIndex) => {
                 setActiveWordIndex(wordIndex);
               }
@@ -685,6 +715,7 @@ export default function App() {
     const buffer = await audioPlayer.decodeAudio(data.audio, data.mimeType);
     audioPlayer.playBuffer(buffer, playbackSpeed);
   };
+
 
   const handleOpenWordModal = (word: WordGloss, line: DialogueLine) => {
     setSelectedWord(word);
