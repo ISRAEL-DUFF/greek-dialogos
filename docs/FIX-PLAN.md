@@ -906,6 +906,45 @@ The settings previously rendered only on Study Reader, while affecting audio in 
 
 ---
 
+## Control rail — one set of controls, beside the text (2026-08-27)
+
+The drawer removed the stacked panels but left two problems visible in the reading view: **card and book views each carried their own playback bar**, and a full-width banner was spent on a single Cards/Book toggle.
+
+Two bars for one job is the duplication that drifts — book view had a `0.9×` speed step that cards did not.
+
+### Desktop: a sticky column
+
+`ControlRail` sits beside the text on `lg` and up, 240px, using horizontal space that was empty. Its contents follow the active view:
+
+```
+cards  RECITE · SPEED · LOOP · FORMAT · SHOW              · OFFLINE
+book   RECITE · SPEED · LOOP · FORMAT · PAGE LAYOUT ·
+                                        TYPE SIZE · PHONETICS · OFFLINE
+```
+
+Playback stays constant; only the view-specific controls swap.
+
+### Narrow screens: a sheet
+
+Below `lg` the rail collapses to a floating **Controls** button raising a bottom sheet, so the reading column keeps the full width. Verified at 375×812: rail `display: none`, button visible, **no horizontal overflow**.
+
+### Structural changes
+
+- `BookFormatView`'s 176-line control ribbon deleted; its `layoutMode`, `fontSize` and `showTransliteration` lifted into `App` so the rail can drive them.
+- The Cards/Book banner is now a two-button segment in the rail.
+- The duplicate **Import / AI** button was removed from the compact module actions — the header already has an Import tab, and two buttons for one destination is how they diverge.
+
+### Measured
+
+```
+                content starts at    screens of chrome
+original              1532                 1.70
+after drawer           352                 0.39
+after rail             192                 0.21
+```
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

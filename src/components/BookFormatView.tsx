@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { Play, Square, Volume2, BookOpen, Columns, AlignLeft, ZoomIn, ZoomOut, Bookmark, FileText, Check, Sparkles, FastForward, RotateCcw, Repeat } from "lucide-react";
 import { DialogueLine, WordGloss, VoiceName, AncientGreekModule } from "../types";
 
+export type BookLayoutMode = "parallel" | "folio" | "greek-manuscript";
+export type FontSizeOption = "sm" | "base" | "lg" | "xl";
+
 interface BookFormatViewProps {
   module: AncientGreekModule;
   isPlaying: boolean;
@@ -16,10 +19,11 @@ interface BookFormatViewProps {
   onPlayFullDialogue: () => void;
   onStopPlayback: () => void;
   onSelectWord: (word: WordGloss, line: DialogueLine) => void;
+  /** Book layout controls, lifted so the shared rail can drive them. */
+  layoutMode: BookLayoutMode;
+  fontSize: FontSizeOption;
+  showTransliteration: boolean;
 }
-
-type BookLayoutMode = "parallel" | "folio" | "greek-manuscript";
-type FontSizeOption = "sm" | "base" | "lg" | "xl";
 
 export const BookFormatView: React.FC<BookFormatViewProps> = ({
   module,
@@ -35,12 +39,11 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
   onPlayFullDialogue,
   onStopPlayback,
   onSelectWord,
+  layoutMode,
+  fontSize,
+  showTransliteration,
 }) => {
-  const [layoutMode, setLayoutMode] = useState<BookLayoutMode>("greek-manuscript");
-  const [fontSize, setFontSize] = useState<FontSizeOption>("base");
-  const [showStephanusNumbers, setShowStephanusNumbers] = useState(true);
-  const [showTransliteration, setShowTransliteration] = useState(true);
-  const [copied, setCopied] = useState(false);
+  const [showStephanusNumbers] = useState(true);
 
   const activeLineRef = useRef<HTMLDivElement | null>(null);
 
@@ -57,14 +60,6 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
     }
   }, [activeLineId]);
 
-  const handleCopyTranscript = () => {
-    const text = module.lines.map(
-      (l) => `${l.speaker} (${l.speakerEn}):\n${l.greekText}\n"${l.englishTranslation}"\n`
-    ).join("\n");
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
 
   const getFontSizeClasses = () => {
@@ -102,182 +97,9 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* Book Reader Control Ribbon */}
-      <div className="bg-[#FFFFFF] border-2 border-[#2D2A26] p-4 shadow-none flex flex-wrap items-center justify-between gap-4 font-sans text-xs">
-        
-        {/* Playback Controls & Progress */}
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            id="book-btn-play-all"
-            onClick={isPlaying ? onStopPlayback : onPlayFullDialogue}
-            disabled={isBuffering}
-            className={`flex items-center gap-2 px-4 py-2 border border-[#2D2A26] text-[10px] sm:text-xs uppercase tracking-widest font-bold transition-all cursor-pointer ${
-              isPlaying
-                ? "bg-[#8B7355] text-[#F7F5F0] hover:bg-[#2D2A26]"
-                : "bg-[#2D2A26] text-[#F7F5F0] hover:bg-transparent hover:text-[#2D2A26]"
-            } disabled:opacity-50`}
-          >
-            {isBuffering ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent animate-spin" />
-                <span>Synthesizing...</span>
-              </>
-            ) : isPlaying ? (
-              <>
-                <Square className="w-3.5 h-3.5 fill-current" />
-                <span>Stop Conversation</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Play Entire Conversation ({module.lines.length} Lines)</span>
-              </>
-            )}
-          </button>
-
-          {/* Active Recitation Status Pill */}
-          {isPlaying && activeLine && (
-            <div className="flex items-center gap-2 px-3 py-1.5 border border-[#8B7355] bg-[#F7F5F0] text-[10px] font-bold uppercase tracking-wider text-[#2D2A26]">
-              <span className="w-2 h-2 rounded-full bg-[#8B7355] animate-ping" />
-              <span>
-                Reciting Line {activeLineIndex + 1}/{module.lines.length}: {activeLine.speaker}
-              </span>
-            </div>
-          )}
-
-          {/* Speed Selector */}
-          {setPlaybackSpeed && (
-            <div className="flex items-center gap-1 border border-[#E5E1D8] p-0.5 bg-[#F7F5F0]">
-              <span className="text-[9px] font-mono font-bold text-[#8B7355] px-1.5 uppercase">Speed:</span>
-              {[0.75, 0.9, 1.0, 1.25].map((speed) => (
-                <button
-                  key={speed}
-                  onClick={() => setPlaybackSpeed(speed)}
-                  className={`px-1.5 py-0.5 text-[9px] font-mono font-bold transition-all cursor-pointer ${
-                    playbackSpeed === speed
-                      ? "bg-[#2D2A26] text-[#F7F5F0]"
-                      : "text-[#5C564E] hover:text-[#2D2A26]"
-                  }`}
-                >
-                  {speed}x
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Loop Toggle */}
-          {onToggleLoop && (
-            <button
-              id="book-btn-toggle-loop"
-              onClick={onToggleLoop}
-              className={`flex items-center gap-1.5 px-2.5 py-1 border text-[10px] uppercase font-sans font-bold tracking-wider transition-all cursor-pointer ${
-                isLooping
-                  ? "border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0] ring-1 ring-[#8B7355]"
-                  : "border-[#E5E1D8] bg-[#F7F5F0] text-[#5C564E] hover:border-[#2D2A26] hover:text-[#2D2A26]"
-              }`}
-              title={isLooping ? "Loop Active: Automatically replays conversation or selected line" : "Enable Loop"}
-            >
-              <Repeat className={`w-3 h-3 ${isLooping ? "text-[#8B7355]" : ""}`} />
-              <span>Loop:</span>
-              <span className={isLooping ? "text-[#8B7355] font-extrabold" : "text-[#5C564E] font-normal"}>
-                {isLooping ? "ON" : "OFF"}
-              </span>
-            </button>
-          )}
-        </div>
-
-        {/* Layout Modes & Typography Tools */}
-        <div className="flex flex-wrap items-center gap-3">
-          
-          {/* Format Selector */}
-          <div className="flex items-center gap-1 border border-[#E5E1D8] p-0.5 bg-[#F7F5F0]">
-            <button
-              id="layout-parallel"
-              onClick={() => setLayoutMode("parallel")}
-              className={`flex items-center gap-1 px-2.5 py-1 text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer ${
-                layoutMode === "parallel"
-                  ? "bg-[#2D2A26] text-[#F7F5F0]"
-                  : "text-[#5C564E] hover:text-[#2D2A26]"
-              }`}
-              title="Parallel Facing Columns (Loeb Classical Library style)"
-            >
-              <Columns className="w-3 h-3" />
-              <span>Bilingual Facing</span>
-            </button>
-
-            <button
-              id="layout-folio"
-              onClick={() => setLayoutMode("folio")}
-              className={`flex items-center gap-1 px-2.5 py-1 text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer ${
-                layoutMode === "folio"
-                  ? "bg-[#2D2A26] text-[#F7F5F0]"
-                  : "text-[#5C564E] hover:text-[#2D2A26]"
-              }`}
-              title="Unified Dramatic Prose Folio"
-            >
-              <AlignLeft className="w-3 h-3" />
-              <span>Dramatic Folio</span>
-            </button>
-
-            <button
-              id="layout-greek-only"
-              onClick={() => setLayoutMode("greek-manuscript")}
-              className={`flex items-center gap-1 px-2.5 py-1 text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer ${
-                layoutMode === "greek-manuscript"
-                  ? "bg-[#2D2A26] text-[#F7F5F0]"
-                  : "text-[#5C564E] hover:text-[#2D2A26]"
-              }`}
-              title="Attic Greek Manuscript Only"
-            >
-              <BookOpen className="w-3 h-3" />
-              <span>Greek Codex</span>
-            </button>
-          </div>
-
-          {/* Font Scaler */}
-          <div className="flex items-center gap-1 border border-[#E5E1D8] p-0.5 bg-[#F7F5F0]">
-            {(["sm", "base", "lg", "xl"] as FontSizeOption[]).map((size) => (
-              <button
-                key={size}
-                id={`font-size-${size}`}
-                onClick={() => setFontSize(size)}
-                className={`px-2 py-1 text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
-                  fontSize === size
-                    ? "bg-[#2D2A26] text-[#F7F5F0]"
-                    : "text-[#5C564E] hover:text-[#2D2A26]"
-                }`}
-              >
-                {size === "sm" ? "A-" : size === "base" ? "A" : size === "lg" ? "A+" : "A++"}
-              </button>
-            ))}
-          </div>
-
-          {/* Toggle Transliteration / Numbers */}
-          <button
-            onClick={() => setShowTransliteration(!showTransliteration)}
-            className={`px-2.5 py-1 border text-[10px] font-sans font-bold uppercase tracking-wider transition-all cursor-pointer ${
-              showTransliteration
-                ? "border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0]"
-                : "border-[#E5E1D8] bg-[#F7F5F0] text-[#5C564E] hover:border-[#2D2A26]"
-            }`}
-            title="Toggle phonetic transliteration pronunciation"
-          >
-            Phonetics
-          </button>
-
-          <button
-            onClick={handleCopyTranscript}
-            className="flex items-center gap-1 px-2.5 py-1 border border-[#E5E1D8] bg-[#F7F5F0] text-[#5C564E] hover:border-[#2D2A26] hover:text-[#2D2A26] text-[10px] font-sans font-bold uppercase tracking-wider transition-all cursor-pointer"
-            title="Copy full Greek & English dialogue transcript"
-          >
-            {copied ? <Check className="w-3 h-3 text-green-600" /> : <FileText className="w-3 h-3" />}
-            <span>{copied ? "Copied" : "Export"}</span>
-          </button>
-
-        </div>
-
-      </div>
-
+      {/* Control ribbon removed: playback, layout, font size and phonetics
+          are now in the shared control rail, so book and card views no
+          longer carry two separate playback bars. */}
       {/* The Book Folio Container */}
       <div className="bg-[#FFFFFF] border-2 border-[#2D2A26] shadow-md p-6 sm:p-10 md:p-14 relative">
         

@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Header, AppTab } from "./components/Header";
-import { AudioControls } from "./components/AudioControls";
 import { DialogueCard } from "./components/DialogueCard";
-import { BookFormatView } from "./components/BookFormatView";
+import { BookFormatView, BookLayoutMode, FontSizeOption } from "./components/BookFormatView";
 import { WordGlossModal } from "./components/WordGlossModal";
 import { CustomTTSSection } from "./components/CustomTTSSection";
 import { RoleplayMode } from "./components/RoleplayMode";
@@ -18,8 +17,9 @@ import { gapAfter, loopRestartGap, lineRepeatGap } from "./utils/dialogueTiming"
 import { useOnlineStatus } from "./utils/useOnlineStatus";
 import { AUDIO_CACHE_BUDGET_BYTES, getKeepOfflineIds } from "./utils/offlinePrefs";
 import { SettingsDrawer } from "./components/SettingsDrawer";
+import { ControlRail } from "./components/ControlRail";
 import { SpeechSettings, loadSettings, saveSettings, settingsVariant } from "./utils/speechSettings";
-import { BookOpen, Layers, Sparkles } from "lucide-react";
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>("dialogue");
@@ -82,6 +82,11 @@ export default function App() {
   // Display mode
   const [displayMode, setDisplayMode] = useState<DisplayMode>("all");
   const [dialogueLayoutView, setDialogueLayoutView] = useState<"cards" | "book">("cards");
+  // Book-view controls live here so the shared rail can drive them; they used
+  // to be local state inside BookFormatView with their own duplicate toolbar.
+  const [bookLayout, setBookLayout] = useState<BookLayoutMode>("greek-manuscript");
+  const [bookFontSize, setBookFontSize] = useState<FontSizeOption>("base");
+  const [showTransliteration, setShowTransliteration] = useState(true);
   
   // Word gloss inspection modal
   const [selectedWord, setSelectedWord] = useState<WordGloss | null>(null);
@@ -723,75 +728,42 @@ export default function App() {
         )}
 
 
-        {/* Global Toolbar & Audio Controls (on dialogue tab cards view) */}
-        {activeTab === "dialogue" && dialogueLayoutView === "cards" && (
-          <AudioControls
-            isPlaying={isPlaying}
-            isBuffering={isBuffering}
-            activeLineId={activeLineId}
-            playbackSpeed={playbackSpeed}
-            setPlaybackSpeed={setPlaybackSpeed}
-            isLooping={isLooping}
-            onToggleLoop={handleToggleLoop}
-            currentModule={currentModule}
-            displayMode={displayMode}
-            setDisplayMode={setDisplayMode}
-            onPlayFullDialogue={handlePlayFullDialogue}
-            onStopPlayback={handleStopPlayback}
-            cachedLineCount={cachedLineIds.size}
-            totalLineCount={currentModule.lines.length}
-            isPrecaching={isPrecaching}
-            precacheProgress={precacheProgress}
-            onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
-            onCancelPrecache={handleCancelPrecache}
-            precacheResult={precacheResult}
-          />
-        )}
 
-        {/* Tab 1: Interactive Dialogue View */}
+        {/* Tab 1: Interactive Dialogue View.
+            Two columns on wide screens: the reading column keeps a comfortable
+            measure while the controls occupy space that was empty. Below lg the
+            rail collapses to a button that raises a sheet. */}
         {activeTab === "dialogue" && (
-          <div className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_15rem] items-start">
+            <ControlRail
+              isPlaying={isPlaying}
+              isBuffering={isBuffering}
+              onPlayFullDialogue={handlePlayFullDialogue}
+              onStopPlayback={handleStopPlayback}
+              lineCount={currentModule.lines.length}
+              playbackSpeed={playbackSpeed}
+              setPlaybackSpeed={setPlaybackSpeed}
+              isLooping={isLooping}
+              onToggleLoop={handleToggleLoop}
+              layout={dialogueLayoutView}
+              setLayout={setDialogueLayoutView}
+              displayMode={displayMode}
+              setDisplayMode={setDisplayMode}
+              bookLayout={bookLayout}
+              setBookLayout={setBookLayout}
+              fontSize={bookFontSize}
+              setFontSize={setBookFontSize}
+              showTransliteration={showTransliteration}
+              setShowTransliteration={setShowTransliteration}
+              cachedLineCount={cachedLineIds.size}
+              isPrecaching={isPrecaching}
+              precacheProgress={precacheProgress}
+              onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
+              onCancelPrecache={handleCancelPrecache}
+            />
+
+          <div className="space-y-6 lg:order-first min-w-0">
             
-            {/* View switcher banner */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-[#FFFFFF] border-2 border-[#2D2A26]">
-              <div>
-                <span className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em]">
-                  Dialogue Format View
-                </span>
-                <p className="text-xs font-serif text-[#2D2A26] mt-0.5">
-                  Toggle between granular card-by-card grammatical analysis and immersive unified book edition.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-1.5 border border-[#2D2A26] p-1 bg-[#F7F5F0]">
-                <button
-                  id="switch-view-cards"
-                  onClick={() => setDialogueLayoutView("cards")}
-                  className={`flex items-center gap-1.5 px-3 py-1 text-[10px] uppercase font-sans font-bold tracking-wider transition-all cursor-pointer ${
-                    dialogueLayoutView === "cards"
-                      ? "bg-[#2D2A26] text-[#F7F5F0]"
-                      : "text-[#5C564E] hover:text-[#2D2A26]"
-                  }`}
-                >
-                  <Layers className="w-3 h-3" />
-                  <span>Analytical Cards</span>
-                </button>
-
-                <button
-                  id="switch-view-book"
-                  onClick={() => setDialogueLayoutView("book")}
-                  className={`flex items-center gap-1.5 px-3 py-1 text-[10px] uppercase font-sans font-bold tracking-wider transition-all cursor-pointer ${
-                    dialogueLayoutView === "book"
-                      ? "bg-[#2D2A26] text-[#F7F5F0]"
-                      : "text-[#5C564E] hover:text-[#2D2A26]"
-                  }`}
-                >
-                  <BookOpen className="w-3 h-3" />
-                  <span>Unified Book Format</span>
-                </button>
-              </div>
-            </div>
-
             {dialogueLayoutView === "cards" ? (
               <div className="space-y-4">
                 {/* Context Card */}
@@ -825,6 +797,9 @@ export default function App() {
                       displayMode={displayMode}
                       onPlayLine={handlePlayLine}
                       onSelectWord={handleOpenWordModal}
+                layoutMode={bookLayout}
+                fontSize={bookFontSize}
+                showTransliteration={showTransliteration}
                     />
                   ))}
                 </div>
@@ -848,25 +823,59 @@ export default function App() {
             )}
 
           </div>
+          </div>
         )}
 
         {/* Tab: Standalone Book Edition */}
         {activeTab === "book" && (
-          <BookFormatView
-            module={currentModule}
-            isPlaying={isPlaying}
-            isBuffering={isBuffering}
-            activeLineId={activeLineId}
-            activeWordIndex={activeWordIndex}
-            playbackSpeed={playbackSpeed}
-            setPlaybackSpeed={setPlaybackSpeed}
-            isLooping={isLooping}
-            onToggleLoop={handleToggleLoop}
-            onPlayLine={handlePlayLine}
-            onPlayFullDialogue={handlePlayFullDialogue}
-            onStopPlayback={handleStopPlayback}
-            onSelectWord={handleOpenWordModal}
-          />
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_15rem] items-start">
+            <ControlRail
+              isPlaying={isPlaying}
+              isBuffering={isBuffering}
+              onPlayFullDialogue={handlePlayFullDialogue}
+              onStopPlayback={handleStopPlayback}
+              lineCount={currentModule.lines.length}
+              playbackSpeed={playbackSpeed}
+              setPlaybackSpeed={setPlaybackSpeed}
+              isLooping={isLooping}
+              onToggleLoop={handleToggleLoop}
+              layout="book"
+              setLayout={(l) => { if (l === "cards") { setActiveTab("dialogue"); setDialogueLayoutView("cards"); } }}
+              displayMode={displayMode}
+              setDisplayMode={setDisplayMode}
+              bookLayout={bookLayout}
+              setBookLayout={setBookLayout}
+              fontSize={bookFontSize}
+              setFontSize={setBookFontSize}
+              showTransliteration={showTransliteration}
+              setShowTransliteration={setShowTransliteration}
+              cachedLineCount={cachedLineIds.size}
+              isPrecaching={isPrecaching}
+              precacheProgress={precacheProgress}
+              onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
+              onCancelPrecache={handleCancelPrecache}
+            />
+            <div className="lg:order-first min-w-0">
+              <BookFormatView
+                module={currentModule}
+                isPlaying={isPlaying}
+                isBuffering={isBuffering}
+                activeLineId={activeLineId}
+                activeWordIndex={activeWordIndex}
+                playbackSpeed={playbackSpeed}
+                setPlaybackSpeed={setPlaybackSpeed}
+                isLooping={isLooping}
+                onToggleLoop={handleToggleLoop}
+                onPlayLine={handlePlayLine}
+                onPlayFullDialogue={handlePlayFullDialogue}
+                onStopPlayback={handleStopPlayback}
+                onSelectWord={handleOpenWordModal}
+                layoutMode={bookLayout}
+                fontSize={bookFontSize}
+                showTransliteration={showTransliteration}
+              />
+            </div>
+          </div>
         )}
 
         {/* Tab: AI Importer & Generator (Option 2) */}

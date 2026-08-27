@@ -99,6 +99,7 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = ({
             <span>Library ({allModules.length})</span>
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`} />
           </button>
+        {!compact && (
 
           <button
             id="btn-open-importer"
@@ -108,6 +109,7 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = ({
             <Sparkles className="w-3.5 h-3.5" />
             <span>Import / AI</span>
           </button>
+        )}
         </div>
 
       </div>
