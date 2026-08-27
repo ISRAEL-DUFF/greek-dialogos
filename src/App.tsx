@@ -18,6 +18,8 @@ import { gapAfter, loopRestartGap, lineRepeatGap } from "./utils/dialogueTiming"
 import { useOnlineStatus } from "./utils/useOnlineStatus";
 import { AUDIO_CACHE_BUDGET_BYTES, getKeepOfflineIds } from "./utils/offlinePrefs";
 import { OfflineStoragePanel } from "./components/OfflineStoragePanel";
+import { SpeechSettingsPanel } from "./components/SpeechSettingsPanel";
+import { SpeechSettings, loadSettings, saveSettings, settingsVariant } from "./utils/speechSettings";
 import { BookOpen, Layers, Sparkles } from "lucide-react";
 
 export default function App() {
@@ -63,28 +65,19 @@ export default function App() {
    * off on the same line to compare. Cached audio is keyed separately for each
    * mode, so switching does not serve the other mode's rendering.
    */
-  const [useContextualDelivery, setUseContextualDelivery] = useState<boolean>(false);
   /**
-   * Connected speech (phrasing + stress). ON by default.
-   *
-   * Groups proclitics, enclitics and elisions into single phonological words
-   * and marks acute/circumflex stress, so the engine reads a phrase rather
-   * than a list of citation forms. The toggle stays available because the two
-   * renderings are cached separately and can be compared on the same line.
+   * Speech settings, persisted. Replaces three scattered toggles and a
+   * constant; see utils/speechSettings.
    */
-  const [useConnectedSpeech, setUseConnectedSpeech] = useState<boolean>(true);
+  const [speechSettings, setSpeechSettings] = useState<SpeechSettings>(() => loadSettings());
 
-  /**
-   * How much stress the engine marks. Sent explicitly and folded into the
-   * audio cache key, so changing it here invalidates clips rendered under the
-   * previous setting rather than serving them for the new one.
-   *
-   * "none" for now: the marks ARE honoured — every accented word sounded
-   * hammered — so this is a question of how much prominence helps, not whether
-   * it works. "phrase" (one nuclear stress per sentence) and "all" remain
-   * available on the API.
-   */
-  const STRESS_DENSITY = "none" as const;
+  const handleSettingsChange = (next: SpeechSettings) => {
+    setSpeechSettings(next);
+    saveSettings(next);
+  };
+
+  const useContextualDelivery = speechSettings.contextualDelivery;
+
   
   // Display mode
   const [displayMode, setDisplayMode] = useState<DisplayMode>("all");
@@ -258,7 +251,7 @@ export default function App() {
   const fetchLineAudioBuffer = async (line: DialogueLine): Promise<AudioBuffer> => {
     const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
     const { context, variant: ctxVariant } = buildLineContext(line, currentModule);
-    const variant = useConnectedSpeech ? `${ctxVariant}flow-${STRESS_DENSITY}` : ctxVariant;
+    const variant = `${ctxVariant}${settingsVariant(speechSettings)}`;
 
     // 1. Check IndexedDB cache first
     const cached = await audioStorage.getCachedAudio(currentModule.id, line.id, voice, variant);
@@ -275,9 +268,10 @@ export default function App() {
         voice,
         speakerName: line.speakerEn,
         context,
-        phrasing: useConnectedSpeech,
-        accents: useConnectedSpeech,
-        stressDensity: STRESS_DENSITY,
+        phrasing: speechSettings.connectedSpeech,
+        accents: true,
+        stressDensity: speechSettings.stressDensity,
+        pronunciation: speechSettings.pronunciation,
       }),
     });
 
@@ -339,7 +333,7 @@ export default function App() {
 
       const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
       const { context, variant: ctxVariant } = buildLineContext(line, mod);
-      const variant = useConnectedSpeech ? `${ctxVariant}flow-${STRESS_DENSITY}` : ctxVariant;
+      const variant = `${ctxVariant}${settingsVariant(speechSettings)}`;
       const existing = await audioStorage.getCachedAudio(mod.id, line.id, voice, variant);
 
       if (existing) {
@@ -354,9 +348,10 @@ export default function App() {
               voice,
               speakerName: line.speakerEn,
               context,
-              phrasing: useConnectedSpeech,
-              accents: useConnectedSpeech,
-              stressDensity: STRESS_DENSITY,
+              phrasing: speechSettings.connectedSpeech,
+              accents: true,
+              stressDensity: speechSettings.stressDensity,
+              pronunciation: speechSettings.pronunciation,
             }),
             signal: controller.signal,
           });
@@ -738,12 +733,14 @@ export default function App() {
             precacheProgress={precacheProgress}
             onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
             onCancelPrecache={handleCancelPrecache}
-            useContextualDelivery={useContextualDelivery}
-            onToggleContextualDelivery={() => setUseContextualDelivery((prev) => !prev)}
-            useConnectedSpeech={useConnectedSpeech}
-            onToggleConnectedSpeech={() => setUseConnectedSpeech((prev) => !prev)}
             precacheResult={precacheResult}
             onExportModule={() => handleExportCurrentModule(currentModule)}
+          />
+
+          <SpeechSettingsPanel
+            settings={speechSettings}
+            onChange={handleSettingsChange}
+            disabled={isPlaying || isPrecaching}
           />
 
           <OfflineStoragePanel

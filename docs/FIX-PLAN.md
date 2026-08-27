@@ -802,6 +802,34 @@ Greek orthography accents nearly every word, but speech gives a phrase one nucle
 
 ---
 
+## Pronunciation settings (2026-08-27)
+
+Three pronunciation traditions are now selectable, replacing a fixed scheme and three ad-hoc toggles scattered through the playback bar.
+
+| Setting | Sent to the engine | What it costs |
+|---|---|---|
+| **Modern Greek** | the Greek itself, untranscribed | Flows best — the model knows the language. But η ι υ ει οι merge to [i], so `λύει / λύῃ / λύοι` are homophones: three moods, one sound. |
+| **Erasmian** *(default)* | `Khaire, oh phile! Poi badizdeis;` | Every vowel stays distinct. Not historically authentic — a teaching convention. |
+| **Reconstructed Attic** | `ˈkʰai̯re, ˈɔː ˈpʰile! ˈpoi̯ baˈdizdeːs;` | Aspirates distinct from plain stops, vowel length, [y], audible iota subscript. The engine handles symbols less smoothly than letters. |
+
+Each maps onto machinery that already existed: Modern needs no transcription at all, Erasmian is the Latin engine, and Reconstructed is the IPA converter — which is the only notation able to state its distinctions.
+
+### Why the trade-offs are shown in the UI
+
+These are competing scholarly traditions, not display preferences, and the ranking is counter-intuitive: **Modern Greek sounds best and teaches least.** Nobody would guess that from a dropdown of three names, so each option carries its cost and a worked sample.
+
+### Consolidation
+
+`connectedSpeech`, `stressDensity` and `contextualDelivery` moved into the same panel and into one persisted object ([`speechSettings.ts`](../src/utils/speechSettings.ts)). The old `Flow` and `Context` buttons are deleted rather than left unreachable. Settings are validated field by field on load, so a stale or hand-edited value cannot put the engine into an undefined state.
+
+### Cache correctness
+
+`settingsVariant()` fingerprints every setting that changes how a line sounds, and it is folded into the audio cache key. A test asserts all 18 combinations produce distinct fingerprints — without that, switching schemes would replay audio rendered under the previous one. Contextual delivery is deliberately excluded: it already has a per-line hash, because it depends on the neighbouring line too.
+
+**Consequence for offline users:** each combination caches separately, so switching schemes re-synthesizes. Returning to a scheme you have used before plays instantly. The panel says so.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

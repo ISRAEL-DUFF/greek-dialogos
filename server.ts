@@ -240,10 +240,12 @@ function buildSpokenPrompt({
   emotion,
   context,
   ipa = false,
+  modern = false,
 }: {
   phoneticText: string;
   emotion?: string;
   ipa?: boolean;
+  modern?: boolean;
   context?: {
     speakerName?: string;
     speakerRole?: string;
@@ -254,9 +256,11 @@ function buildSpokenPrompt({
 }): string {
   // IPA needs a different instruction: the model must be told these are
   // phonetic symbols to realise, not letters to read.
-  const pronunciation = ipa
-    ? "The following is an IPA phonetic transcription of Ancient Greek. Pronounce it exactly as the symbols specify, realising every symbol precisely"
-    : "Speak with authentic Reconstructed Attic/Erasmian Ancient Greek pronunciation";
+  const pronunciation = modern
+    ? "Read this Greek aloud naturally and fluently, using Modern Greek pronunciation"
+    : ipa
+      ? "The following is an IPA phonetic transcription of Ancient Greek. Pronounce it exactly as the symbols specify, realising every symbol precisely"
+      : "Speak with authentic Reconstructed Attic/Erasmian Ancient Greek pronunciation";
 
   if (!context) {
     return emotion
@@ -302,6 +306,9 @@ app.post("/api/tts", async (req, res) => {
       accents = false,
       // "latin" respells Greek using English spelling conventions; "ipa"
       // states the sounds directly and sidesteps the guesswork entirely.
+      // Which pronunciation tradition to synthesize. Modern reads the Greek
+      // natively; Erasmian uses the Latin respelling; Reconstructed uses IPA.
+      pronunciation = "erasmian",
       notation = "latin",
       // "none" by default: marking every accented word sounded hammered, and
       // even one nuclear stress per sentence was more than wanted. The marks
@@ -323,14 +330,22 @@ app.post("/api/tts", async (req, res) => {
     // Group into phonological words before transcribing, so proclitics,
     // enclitics and elisions are spoken as single units rather than as a list
     // of citation forms. Falls back to word-by-word when phrasing is off.
-    const useIPA = notation === "ipa";
-    const phoneticText = useIPA
-      ? convertToIPAForm(text, { phrasing })
-      : convertToSpokenForm(text, { phrasing, preserveAccents: accents, stressDensity });
+    // Reconstructed Attic is expressed in IPA, which is the only notation that
+    // can state its distinctions — aspirated stops, vowel length, [y]. Modern
+    // needs no transcription at all: the model already knows the language, and
+    // transcribing would only get in its way.
+    const useIPA = pronunciation === "reconstructed" || notation === "ipa";
+    const useModern = pronunciation === "modern";
+
+    const phoneticText = useModern
+      ? text
+      : useIPA
+        ? convertToIPAForm(text, { phrasing })
+        : convertToSpokenForm(text, { phrasing, preserveAccents: accents, stressDensity });
 
     // Contextual delivery is opt-in: the client sends `context` only when the
     // experimental toggle is on, so default behaviour is byte-identical.
-    const spokenPrompt = buildSpokenPrompt({ phoneticText, emotion, context, ipa: useIPA });
+    const spokenPrompt = buildSpokenPrompt({ phoneticText, emotion, context, ipa: useIPA, modern: useModern });
 
     // 1. OpenRouter TTS if OPENROUTER_API_KEY is configured
     if (isOpenRouterConfigured()) {
@@ -347,12 +362,12 @@ app.post("/api/tts", async (req, res) => {
           text,
           phoneticText,
           provider: `OpenRouter (${MODELS.openrouterTts})`,
-          pronunciation: "Reconstructed Attic/Erasmian",
           contextual: Boolean(context),
           phrasing: Boolean(phrasing),
           accents: Boolean(accents),
           notation,
           stressDensity,
+          pronunciation,
         });
       } catch (openRouterErr: any) {
         console.warn("OpenRouter TTS failed, attempting fallback to Gemini if available:", openRouterErr?.message);
@@ -394,7 +409,7 @@ app.post("/api/tts", async (req, res) => {
         text,
         phoneticText,
         provider: `Gemini TTS (${MODELS.geminiTts})`,
-        pronunciation: "Reconstructed Attic/Erasmian",
+        pronunciation,
       });
     }
 
