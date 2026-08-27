@@ -1327,3 +1327,59 @@ Worth recording, because it changes how the rest of this plan should be read.
 The first draft of this document was written by reading the code. It correctly identified structural problems — the dead endpoint, the playback race, the uncancellable pre-cache — but it was **wrong about the severity and the cause of the single most important bug**. It diagnosed TTS as producing noise via a decoder mismatch, and proposed a decoder rewrite. The real defect was a rejected request parameter, the decoder was already correct, and the app was not degraded but entirely non-functional. It also missed the dead LLM model completely, because a decommissioned model id is indistinguishable from a live one by inspection.
 
 Ten minutes of `curl` against the live API changed one P0, closed another, added a new one, and deleted a substantial piece of proposed work. **Verify external dependencies before planning around them.**
+
+---
+
+## Wrong audio on a line — two defects found
+
+Reported as "the audio on the last sentence is not what the Greek says".
+
+### Defect A — the decoded-buffer cache key collapsed to the byte length
+
+`audioPlayer.ts` keyed its in-memory decode cache as:
+
+```ts
+const cacheKey = `${base64Data.slice(0, 48)}_${base64Data.length}`;
+```
+
+Measured across 8 real clips: every clip returned by the speech engine opens
+with **214–526 bytes of digital silence**. 48 base64 characters cover only 36
+bytes, so all 8 shared a byte-identical `AAAA…A` prefix. The key was therefore
+**the byte length alone**.
+
+Clip lengths are quantised to 640-byte frames, so two lines needed only to land
+within ~13ms of each other to collide — at which point the second line was
+handed the first line's decoded buffer and spoke the wrong text. Later lines
+were the likeliest victims, having more earlier clips to collide with, which
+matches the report exactly.
+
+**Fix.** Playback passes the durable cache key as an explicit identity — it is
+unique by construction and free to compute. Callers with no natural key (word
+gloss, TTS Studio) fall back to a content hash over the whole string, which is
+O(n) across roughly a megabyte and costs a few milliseconds per decode.
+
+Regression test: `tests/audioFingerprint.test.ts` asserts the old key collided
+on same-length clips and that the new one does not, including a 40-clip sweep.
+
+### Defect B — export dropped the pronunciation variant
+
+`AudioRecord` never stored `variant` as a field; it existed only inside the
+composite key string. `getModuleAudioMap` reads *records*, so every export
+silently lost it, and `importModuleAudioMap` rebuilt keys with no variant
+argument — landing every imported clip under the legacy no-variant key, where
+no current setting will ever look for it.
+
+**Fix.** `variant` is now a field on the record and written on every cache.
+`variantOf()` recovers it from the key for records written before the field
+existed, so old exports and existing caches round-trip correctly.
+
+### Not confirmed against the reported module
+
+The user's export (`greek-module-module-symposium-aristophanes-myth.json`) sits
+on the Desktop, which macOS TCC blocks this process from reading — `ls` stats it,
+every read returns EPERM. Both defects above were found and proven by
+inspection and measurement, not by reproducing against that file. A third
+candidate remains **unverified**: `server.ts` assigns `id: line.id ?? idx + 1`
+on import with no uniqueness check, so a module whose generated lines carry
+duplicate ids would produce identical durable cache keys. Whether this module
+does is exactly what the unreadable file would settle.

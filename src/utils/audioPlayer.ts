@@ -97,6 +97,33 @@ export function calculateWordTimings(
   });
 }
 
+/**
+ * Content fingerprint for the decoded-buffer cache.
+ *
+ * The previous key was `base64.slice(0, 48) + "_" + length`. Every clip this
+ * engine returns opens with 200–500 bytes of digital silence, and 48 base64
+ * characters cover only 36 bytes — so the prefix was "AAAA…A" for every clip
+ * ever produced, and the key collapsed to the byte length alone.
+ *
+ * Lengths are quantised to 640-byte frames, so two lines needed only to match
+ * within about 13ms of duration to collide, at which point one line played
+ * another's audio. Later lines were the likeliest victims, having more earlier
+ * clips to collide with.
+ *
+ * Hashing the whole string is O(n) over roughly a megabyte — a few milliseconds,
+ * paid once per decode, and it cannot collide on length alone.
+ */
+function fingerprint(data: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < data.length; i++) {
+    const c = data.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193);
+    h2 = Math.imul(h2 + c, 0x85ebca6b) ^ (h2 >>> 13);
+  }
+  return `${(h1 >>> 0).toString(36)}${(h2 >>> 0).toString(36)}_${data.length}`;
+}
+
 class AudioPlayerEngine {
   private ctx: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
@@ -133,8 +160,16 @@ class AudioPlayerEngine {
   /**
    * Convert base64 string (either WAV or raw 24kHz PCM 16-bit LE) to AudioBuffer
    */
-  public async decodeAudio(base64Data: string, mimeType = "audio/pcm;rate=24000"): Promise<AudioBuffer> {
-    const cacheKey = `${base64Data.slice(0, 48)}_${base64Data.length}`;
+  public async decodeAudio(
+    base64Data: string,
+    mimeType = "audio/pcm;rate=24000",
+    /**
+     * Identity of this clip, when the caller knows it. Playback passes the
+     * same key the durable cache uses, which is unique by construction.
+     */
+    identity?: string
+  ): Promise<AudioBuffer> {
+    const cacheKey = identity ?? fingerprint(base64Data);
     const hit = this.audioCache.get(cacheKey);
     if (hit) {
       // Re-insert to mark as most recently used: Map preserves insertion order,

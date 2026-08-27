@@ -13,7 +13,7 @@ import { DialogueLine, DisplayMode, VoiceName, WordGloss, AncientGreekModule } f
 import { audioPlayer } from "./utils/audioPlayer";
 import { convertToSpokenForm } from "./utils/phoneticConverter";
 import { convertToIPAForm } from "./utils/ipaConverter";
-import { audioStorage } from "./utils/audioStorage";
+import { audioStorage, audioCacheKey as audioStorageKey } from "./utils/audioStorage";
 import { exportModuleWithAudio, exportLibraryWithAudio, downloadJsonFile } from "./utils/modulePackage";
 import { gapAfter, loopRestartGap, lineRepeatGap } from "./utils/dialogueTiming";
 import { useOnlineStatus } from "./utils/useOnlineStatus";
@@ -340,7 +340,11 @@ export default function App() {
     // 1. Check IndexedDB cache first
     const cached = await audioStorage.getCachedAudio(currentModule.id, line.id, voice, variant);
     if (cached && cached.audioBase64) {
-      return await audioPlayer.decodeAudio(cached.audioBase64, cached.mimeType);
+      return await audioPlayer.decodeAudio(
+        cached.audioBase64,
+        cached.mimeType,
+        audioStorageKey(currentModule.id, line.id, voice, variant)
+      );
     }
 
     // 2. Fetch from backend API
@@ -380,7 +384,11 @@ export default function App() {
     // Update cached lines set
     setCachedLineIds((prev) => new Set([...prev, line.id]));
 
-    return await audioPlayer.decodeAudio(data.audio, data.mimeType);
+    return await audioPlayer.decodeAudio(
+      data.audio,
+      data.mimeType,
+      audioStorageKey(currentModule.id, line.id, voice, variant)
+    );
   };
 
   /**

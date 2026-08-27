@@ -20,6 +20,22 @@ export interface AudioRecord {
   createdAt: number;
   /** Updated on every cache hit; drives LRU eviction. Absent on records written before eviction existed. */
   lastAccessedAt?: number;
+  /**
+   * Settings fingerprint this clip was rendered under.
+   *
+   * Previously the variant lived only inside `key`, which meant exporting a
+   * module — a step that reads records, not keys — silently dropped it, and the
+   * clips imported back under the legacy no-variant key. Records written before
+   * this field existed still carry it in their key; {@link variantOf} recovers it.
+   */
+  variant?: string;
+}
+
+/** The variant a record was rendered under, from the field or its key. */
+export function variantOf(record: AudioRecord): string {
+  if (typeof record.variant === "string") return record.variant;
+  const marker = record.key.indexOf("__v_");
+  return marker === -1 ? "" : record.key.slice(marker + 4);
 }
 
 /** Per-module rollup returned by getStorageStats. */
@@ -218,11 +234,20 @@ class AudioStorageManager {
   }
 
   /**
-   * Get all cached audio clips for an entire module (keyed by lineId)
+   * Every cached clip for a module, keyed by line id.
+   *
+   * A line can hold several clips at once — one per voice and pronunciation
+   * variant — and this map has room for only one of them, so the last record
+   * IndexedDB happens to return wins. Each entry therefore carries the `voice`
+   * and `variant` it was actually rendered under, so an import can restore it
+   * to the key it came from instead of guessing.
+   *
+   * Entries also carry their `text`, which lets an importer verify that a clip
+   * still belongs to the line it is being attached to.
    */
   public async getModuleAudioMap(
     moduleId: string
-  ): Promise<Record<number, { audioBase64: string; mimeType: string; voice: string }>> {
+  ): Promise<Record<number, { audioBase64: string; mimeType: string; voice: string; variant?: string; text?: string }>> {
     try {
       const db = await this.getDB();
       return new Promise((resolve) => {
@@ -233,13 +258,18 @@ class AudioStorageManager {
 
         request.onsuccess = () => {
           const records: AudioRecord[] = request.result || [];
-          const audioMap: Record<number, { audioBase64: string; mimeType: string; voice: string }> = {};
+          const audioMap: Record<
+            number,
+            { audioBase64: string; mimeType: string; voice: string; variant?: string; text?: string }
+          > = {};
 
           for (const rec of records) {
             audioMap[rec.lineId] = {
               audioBase64: rec.audioBase64,
               mimeType: rec.mimeType,
               voice: rec.voice,
+              variant: variantOf(rec),
+              text: rec.text,
             };
           }
 
@@ -342,7 +372,10 @@ class AudioStorageManager {
    */
   public async importModuleAudioMap(
     moduleId: string,
-    audioMap: Record<number, { audioBase64: string; mimeType: string; voice: string; text?: string }>
+    audioMap: Record<
+      number,
+      { audioBase64: string; mimeType: string; voice: string; variant?: string; text?: string }
+    >
   ): Promise<number> {
     try {
       const db = await this.getDB();
@@ -361,12 +394,18 @@ class AudioStorageManager {
           const lineId = Number(strId);
           const item = audioMap[lineId];
           if (item && item.audioBase64) {
-            const key = this.makeKey(moduleId, lineId, item.voice || "Fenrir");
+            // Restore under the variant the clip was rendered with. Exports
+            // written before variants existed carry none; those keep the
+            // legacy empty variant, which is exactly where they came from.
+            const voice = item.voice || "Fenrir";
+            const variant = typeof item.variant === "string" ? item.variant : "";
+            const key = this.makeKey(moduleId, lineId, voice, variant);
             const record: AudioRecord = {
               key,
               moduleId,
               lineId,
-              voice: item.voice || "Fenrir",
+              voice,
+              variant,
               audioBase64: item.audioBase64,
               mimeType: item.mimeType || "audio/pcm;rate=24000",
               text: item.text,
