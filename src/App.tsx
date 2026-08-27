@@ -17,14 +17,14 @@ import { exportModuleWithAudio, exportLibraryWithAudio, downloadJsonFile } from 
 import { gapAfter, loopRestartGap, lineRepeatGap } from "./utils/dialogueTiming";
 import { useOnlineStatus } from "./utils/useOnlineStatus";
 import { AUDIO_CACHE_BUDGET_BYTES, getKeepOfflineIds } from "./utils/offlinePrefs";
-import { OfflineStoragePanel } from "./components/OfflineStoragePanel";
-import { SpeechSettingsPanel } from "./components/SpeechSettingsPanel";
+import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SpeechSettings, loadSettings, saveSettings, settingsVariant } from "./utils/speechSettings";
 import { BookOpen, Layers, Sparkles } from "lucide-react";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>("dialogue");
   const isOnline = useOnlineStatus();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   
   // Active Module & Library State
   const [customModules, setCustomModules] = useState<AncientGreekModule[]>([]);
@@ -679,6 +679,32 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         currentModule={currentModule}
+        onOpenSettings={() => setSettingsOpen(true)}
+        moduleActions={
+          <ModuleSelector
+            compact
+            currentModule={currentModule}
+            customModules={customModules}
+            onSelectModule={handleSelectModule}
+            onOpenImporter={() => setActiveTab("importer")}
+            onCustomModulesChange={handleCustomModulesChange}
+          />
+        }
+      />
+
+      <SettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={speechSettings}
+        onSettingsChange={handleSettingsChange}
+        currentModule={currentModule}
+        modules={[...BUILTIN_MODULES, ...customModules]}
+        speakerVoices={speakerVoices}
+        onSetSpeakerVoice={handleSetSpeakerVoice}
+        onStorageChanged={() => refreshCacheStatus(currentModule.id)}
+        onExportModule={() => handleExportCurrentModule(currentModule)}
+        onExportLibrary={handleExportFullLibrary}
+        busy={isPlaying || isPrecaching}
       />
 
       {/* Main Container */}
@@ -696,22 +722,9 @@ export default function App() {
           </div>
         )}
 
-        {/* Global Module Library Selector (on dialogue and book tabs) */}
-        {(activeTab === "dialogue" || activeTab === "book" || activeTab === "roleplay") && (
-          <ModuleSelector
-            currentModule={currentModule}
-            customModules={customModules}
-            onSelectModule={handleSelectModule}
-            onOpenImporter={() => setActiveTab("importer")}
-            onCustomModulesChange={handleCustomModulesChange}
-            onExportModule={handleExportCurrentModule}
-            onExportLibrary={handleExportFullLibrary}
-          />
-        )}
 
         {/* Global Toolbar & Audio Controls (on dialogue tab cards view) */}
         {activeTab === "dialogue" && dialogueLayoutView === "cards" && (
-          <>
           <AudioControls
             isPlaying={isPlaying}
             isBuffering={isBuffering}
@@ -721,8 +734,6 @@ export default function App() {
             isLooping={isLooping}
             onToggleLoop={handleToggleLoop}
             currentModule={currentModule}
-            speakerVoices={speakerVoices}
-            onSetSpeakerVoice={handleSetSpeakerVoice}
             displayMode={displayMode}
             setDisplayMode={setDisplayMode}
             onPlayFullDialogue={handlePlayFullDialogue}
@@ -734,21 +745,7 @@ export default function App() {
             onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
             onCancelPrecache={handleCancelPrecache}
             precacheResult={precacheResult}
-            onExportModule={() => handleExportCurrentModule(currentModule)}
           />
-
-          <SpeechSettingsPanel
-            settings={speechSettings}
-            onChange={handleSettingsChange}
-            disabled={isPlaying || isPrecaching}
-          />
-
-          <OfflineStoragePanel
-            modules={[...BUILTIN_MODULES, ...customModules]}
-            currentModuleId={currentModule.id}
-            onStorageChanged={() => refreshCacheStatus(currentModule.id)}
-          />
-          </>
         )}
 
         {/* Tab 1: Interactive Dialogue View */}

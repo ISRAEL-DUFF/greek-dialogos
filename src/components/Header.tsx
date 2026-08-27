@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Volume2, BookOpen, Sparkles, Sliders, Wand2, Compass, Cpu, WifiOff } from "lucide-react";
+import { Volume2, BookOpen, Sparkles, Sliders, Wand2, Compass, Cpu, WifiOff, Settings } from "lucide-react";
 import { AncientGreekModule } from "../types";
 import { useOnlineStatus } from "../utils/useOnlineStatus";
 
@@ -9,6 +9,9 @@ interface HeaderProps {
   activeTab: AppTab;
   setActiveTab: (tab: AppTab) => void;
   currentModule?: AncientGreekModule;
+  onOpenSettings?: () => void;
+  /** Module library / import controls, rendered in the header row. */
+  moduleActions?: React.ReactNode;
 }
 
 interface ProviderStatus {
@@ -21,7 +24,7 @@ interface ProviderStatus {
   degraded?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, currentModule }) => {
+export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, currentModule, onOpenSettings, moduleActions }) => {
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
   const isOnline = useOnlineStatus();
 
@@ -45,9 +48,19 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, current
             <span className="text-[10px] sm:text-xs uppercase tracking-[0.35em] font-sans font-bold text-[#8B7355] block mb-0.5">
               {currentModule?.author || "Classical Dialogues • Vol. IV"}
             </span>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-serif font-normal tracking-tight text-[#2D2A26]">
-              {currentModule ? currentModule.titleEn.toUpperCase() : "ΣΩΚΡΑΤΗΣ & ΑΛΕΞΑΝΔΡΟΣ"}
+            {/* The Greek title leads; the module card below used to repeat it
+                in Greek while this header showed only the English. */}
+            <h1 className="text-lg sm:text-xl md:text-2xl font-serif font-normal tracking-tight text-[#2D2A26] leading-tight">
+              {currentModule ? currentModule.title : "Σωκράτης & Ἀλέξανδρος"}
             </h1>
+            <span className="text-[11px] sm:text-xs font-sans text-[#5C564E] flex flex-wrap items-center gap-x-2">
+              <span>{currentModule?.titleEn}</span>
+              {currentModule?.difficulty && (
+                <span className="text-[9px] uppercase font-bold tracking-widest text-[#8B7355] border border-[#E5E1D8] px-1">
+                  {currentModule.difficulty}
+                </span>
+              )}
+            </span>
           </div>
         </div>
 
@@ -103,6 +116,18 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab, current
 
           {/* Tab Navigation - Geometric Rectangular Buttons */}
           <nav className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
+            {moduleActions}
+            {onOpenSettings && (
+              <button
+                id="btn-open-settings"
+                onClick={onOpenSettings}
+                aria-label="Open settings"
+                title="Pronunciation, voices, downloads and export"
+                className="px-2 py-1.5 border border-[#E5E1D8] text-[#5C564E] hover:border-[#2D2A26] hover:text-[#2D2A26] transition-all cursor-pointer order-last md:order-first"
+              >
+                <Settings className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               id="tab-dialogue"
               onClick={() => setActiveTab("dialogue")}

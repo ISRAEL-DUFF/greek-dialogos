@@ -1,7 +1,6 @@
 import React from "react";
-import { Play, Square, Volume2, Users, Repeat, Download, HardDrive, Check, Loader2, X } from "lucide-react";
-import { VoiceName, DisplayMode, AncientGreekModule } from "../types";
-import { AVAILABLE_VOICES } from "../data/dialogueData";
+import { Play, Square, Volume2, Users, Repeat, HardDrive, Check, Loader2, X } from "lucide-react";
+import { DisplayMode, AncientGreekModule } from "../types";
 
 interface AudioControlsProps {
   isPlaying: boolean;
@@ -12,8 +11,6 @@ interface AudioControlsProps {
   isLooping: boolean;
   onToggleLoop: () => void;
   currentModule: AncientGreekModule;
-  speakerVoices: Record<string, VoiceName>;
-  onSetSpeakerVoice: (speakerName: string, voice: VoiceName) => void;
   displayMode: DisplayMode;
   setDisplayMode: (mode: DisplayMode) => void;
   onPlayFullDialogue: () => void;
@@ -25,7 +22,6 @@ interface AudioControlsProps {
   onPrecacheAudio?: () => void;
   onCancelPrecache?: () => void;
   precacheResult?: { cached: number; failed: number; skipped: number; cancelled: boolean } | null;
-  onExportModule?: () => void;
 }
 
 export const AudioControls: React.FC<AudioControlsProps> = ({
@@ -37,8 +33,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   isLooping,
   onToggleLoop,
   currentModule,
-  speakerVoices,
-  onSetSpeakerVoice,
   displayMode,
   setDisplayMode,
   onPlayFullDialogue,
@@ -50,7 +44,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
   onPrecacheAudio,
   onCancelPrecache,
   precacheResult = null,
-  onExportModule,
 }) => {
   const isFullyCached = totalLineCount > 0 && cachedLineCount >= totalLineCount;
 
@@ -151,29 +144,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
         {/* Voice and View Options */}
         <div className="flex flex-wrap items-center gap-4 text-xs font-sans">
           
-          {/* Dynamic Speaker Voice Pickers */}
-          {currentModule.speakers.map((sp) => {
-            const currentVoice = speakerVoices[sp.name] || sp.defaultVoice || "Fenrir";
-
-            return (
-              <div key={sp.name} className="flex items-center gap-1.5">
-                <span className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-wider whitespace-nowrap">
-                  {sp.name}:
-                </span>
-                <select
-                  value={currentVoice}
-                  onChange={(e) => onSetSpeakerVoice(sp.name, e.target.value as VoiceName)}
-                  className="bg-[#F7F5F0] border border-[#2D2A26] px-2 py-1 text-[11px] font-sans font-medium text-[#2D2A26] focus:outline-hidden cursor-pointer"
-                >
-                  {AVAILABLE_VOICES.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name} ({v.tone})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            );
-          })}
 
           {/* Display Mode Toggle */}
           <div className="flex items-center gap-1.5">
@@ -294,18 +264,6 @@ export const AudioControls: React.FC<AudioControlsProps> = ({
           </div>
         )}
 
-        {/* Export Module Button */}
-        {onExportModule && (
-          <button
-            id="btn-export-module-package"
-            onClick={onExportModule}
-            className="flex items-center gap-1.5 px-3 py-1 bg-[#F7F5F0] border border-[#8B7355] text-[10px] uppercase font-sans font-bold tracking-wider text-[#2D2A26] hover:bg-[#8B7355] hover:text-[#F7F5F0] transition-all cursor-pointer"
-            title="Download complete JSON package containing text, phonetic models, grammatical analysis, and embedded audio base64 clips"
-          >
-            <Download className="w-3 h-3 text-[#8B7355]" />
-            <span>Export Module (.json + audio)</span>
-          </button>
-        )}
 
       </div>
     </div>

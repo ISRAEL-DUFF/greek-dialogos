@@ -870,6 +870,42 @@ That test also settled why transcription sounds slower: under a common prompt, L
 
 ---
 
+## UI restructure — controls behind a drawer (2026-08-27)
+
+Measured at 1280×900, the Study Reader stacked **1258px of controls above the first line of Greek**, so content began at y=1532 — **1.7 screens** of chrome before a word of text.
+
+```
+                      before    after
+header (sticky)         147      160
+module card             106        —   merged into the header
+playback bar            207      136   voices and export moved out
+speech settings         739        —   moved to the drawer
+offline library         206        —   moved to the drawer
+─────────────────────────────────────
+content starts at      1532      352
+screens of chrome       1.70     0.39
+```
+
+### What was wrong
+
+The frequency profile was inverted. Play, speed and loop are used constantly; pronunciation is set once and rarely revisited; storage is checked occasionally. The three rarest controls occupied 1051 of the 1258 pixels — and the largest, the 739px speech settings panel, was written as a teaching surface with a summary, trade-off and sample per option. Right for a first encounter, wrong for something permanently pinned above the text.
+
+The module identity was also duplicated: the header carried the English title while the card beneath repeated it in Greek.
+
+### What changed
+
+- **Settings drawer**, opened from a gear in the header, holding pronunciation, delivery, voices, offline storage and export. Escape closes it and focus moves into the panel on open.
+- **Module title merged into the header** — Greek leading, English and difficulty beneath. `ModuleSelector` gained a `compact` mode rendering only the Library and Import controls, which now sit in the header row.
+- **Playback bar slimmed** to the controls used while listening. Voice pickers and the export button were removed rather than duplicated, since both now live in the drawer.
+
+### It also fixes a reachability bug
+
+The settings previously rendered only on Study Reader, while affecting audio in Roleplay, Codex, TTS Studio and the word-gloss modal — so a reader practising in Roleplay had to navigate away to change pronunciation. The gear is in the header, so it is present on every tab; verified across all five.
+
+**A note on verifying that:** the first check reported the panel present on every tab. It clicked each tab and queried the DOM in the same synchronous tick, before React re-rendered. Adding a wait flipped five of six results. A passing check is not the same as a true one.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
