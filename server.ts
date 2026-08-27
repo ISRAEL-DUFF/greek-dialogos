@@ -2,9 +2,9 @@ import express from "express";
 import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { convertToReconstructedPhonetics, convertToSpokenForm } from "./src/utils/phoneticConverter";
-import { convertToIPAForm } from "./src/utils/ipaConverter";
-import { VOICE_NAMES, VoiceName } from "./src/types";
+import { convertToReconstructedPhonetics, convertToSpokenForm } from "./src/utils/phoneticConverter.js";
+import { convertToIPAForm } from "./src/utils/ipaConverter.js";
+import { VOICE_NAMES, VoiceName } from "./src/types.js";
 
 dotenv.config();
 
@@ -949,9 +949,30 @@ async function startServer() {
   });
 }
 
-// Only start the standalone HTTP listener if not running as a Vercel serverless function
-if (!process.env.VERCEL) {
-  startServer();
+/**
+ * Serverless runtimes import this module for its exported app and must never
+ * have it bind a port.
+ *
+ * Two hazards were live here. The guard tested only `VERCEL`, so any other
+ * serverless host — or a Vercel runtime that does not set it — would reach
+ * `app.listen()` inside a function. And `startServer()` is async and was called
+ * without a `.catch()`: any rejection inside it became an unhandled promise
+ * rejection, which Node terminates the process for. On a serverless host that
+ * surfaces as a generic platform 500 with no clue as to the cause, because the
+ * crash happens during module load, before any route runs.
+ */
+const isServerless = Boolean(
+  process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    process.env.FUNCTION_TARGET
+);
+
+if (!isServerless) {
+  startServer().catch((err) => {
+    console.error("Failed to start the HTTP server:", err);
+    process.exitCode = 1;
+  });
 }
 
 export default app;

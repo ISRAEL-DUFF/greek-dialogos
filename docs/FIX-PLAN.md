@@ -1227,6 +1227,51 @@ Notes render as `1 / Χαῖρε (Khaîre) / Imperative of χαίρω…`, no `L
 
 ---
 
+## Vercel: ESM imports needed explicit extensions (2026-08-27) — FIXED
+
+**The logs named it exactly:**
+
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/var/task/server'
+  imported from /var/task/api/index.js
+```
+
+**Vercel compiles the TypeScript but does not bundle it.** `package.json` sets `"type": "module"`, so the emitted `.js` is ESM — and **Node ESM performs no extension inference**. `import app from "../server"` survives compilation unchanged and cannot resolve at runtime.
+
+It fails only when deployed because every local path fills the extension in: Vite for the frontend, `tsx` for `npm run dev`, and esbuild for `dist/server.cjs`, which bundles everything into one file so the question never arises.
+
+### Every import along the path, not just the first
+
+```
+api/index.ts        ../server                     → ../server.js
+server.ts           ./src/utils/phoneticConverter → …/phoneticConverter.js
+server.ts           ./src/utils/ipaConverter      → …/ipaConverter.js
+server.ts           ./src/types                   → ./src/types.js
+phoneticConverter   ./phrasing                    → ./phrasing.js
+ipaConverter        ./phrasing                    → ./phrasing.js
+```
+
+Fixing only `api/index.ts` would have moved the failure one module along.
+
+### Verified by simulating the deployment
+
+Reasoning about ESM resolution is easy to get wrong, so the fix was checked against the real mechanism: compile with `tsc` **without bundling**, into a clean directory, and load `api/index.js` with Node under `VERCEL=1`.
+
+```
+before   ERR_MODULE_NOT_FOUND  Cannot find module '…/server'
+after    RESOLVED OK — default export is a function
+```
+
+The intermediate state is what confirmed the diagnosis: with only the entry fixed, resolution advanced past `../server` and failed on the next unextended specifier instead.
+
+Also confirmed unaffected: frontend build, 137 tests, `dist/server.cjs` serving `/api/health`, `/api/providers` and `/` at 200, and the `tsx` dev path.
+
+### Note
+
+`api/index.ts` carries a comment saying the `.js` extension is required and must not be removed. It looks like a mistake — the file it names is `.ts` — and would otherwise be a natural thing for someone to "correct".
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
