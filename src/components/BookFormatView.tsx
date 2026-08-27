@@ -416,17 +416,58 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
           </div>
         )}
 
-        {/* Classical Apparatus Criticus (Scholarly Footnotes) */}
-        <div className="mt-12 pt-6 border-t-2 border-[#2D2A26] text-xs font-mono text-[#5C564E] space-y-1.5">
-          <div className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em] mb-2">
-            Apparatus Criticus & Philological Notes
+        {/* Philological notes.
+            Previously four notes hardcoded here — they rendered identically for
+            every module, so the Aesop fable and the Apology both displayed
+            "128a 1 Χαῖρε, ὦ φίλε", which belongs to neither. Every module
+            already carries authored notes; this reads them.
+
+            The heading no longer says "Apparatus Criticus". An apparatus
+            records variant readings across manuscript witnesses; these are
+            grammatical and cultural commentary, which is a different genre. */}
+        {module.commentary?.philologicalNotes?.length ? (
+          <div className="mt-12 pt-6 border-t-2 border-[#2D2A26] text-xs font-mono text-[#5C564E] space-y-2">
+            <div className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em] mb-2">
+              Philological Notes
+            </div>
+            {module.commentary.philologicalNotes.map((note, i) => (
+              <p key={i}>
+                {note.citation && (
+                  <strong className="text-[#2D2A26]">{note.citation} </strong>
+                )}
+                <em className="font-serif not-italic text-[#2D2A26]">{note.greekTerm}</em>
+                {": "}
+                <span className="font-sans">{note.commentary}</span>
+                {note.rhetoricalDevice && (
+                  <span className="text-[#8B7355]"> [{note.rhetoricalDevice}]</span>
+                )}
+              </p>
+            ))}
           </div>
-          <p>
-            <strong className="text-[#2D2A26]">128a 1</strong> <em>Χαῖρε, ὦ φίλε</em>: Imperativus praesentis cum vocativo. | <strong className="text-[#2D2A26]">128b 4</strong> <em>Ποῖ</em>: adverbium motus ad locum (differt a <em>ποῦ</em> ubi).
-          </p>
-          <p>
-            <strong className="text-[#2D2A26]">128c 7</strong> <em>Ἐσπέρας</em>: genitivus temporis intra quod actio fit. | <strong className="text-[#2D2A26]">128d 11</strong> <em>ποιήσεις</em>: futurum activum indicativi.
-          </p>
+        ) : null}
+
+        {/* Provenance. The page is set as a critical edition, so it must say
+            whether the text has a manuscript tradition at all — otherwise an
+            invented reference reads exactly like a genuine one. */}
+        <div className="mt-6 pt-3 border-t border-[#E5E1D8] text-[10px] font-sans text-[#5C564E] leading-relaxed">
+          {module.provenance === "transmitted" ? (
+            <span>
+              <strong className="text-[#2D2A26] uppercase tracking-wider">Transmitted text.</strong>{" "}
+              Quoted from the manuscript tradition; {module.stephanusRef} is a standard reference.
+            </span>
+          ) : module.provenance === "adapted" ? (
+            <span>
+              <strong className="text-[#2D2A26] uppercase tracking-wider">Adapted text.</strong>{" "}
+              Based on a genuine work, reworded or simplified for study. {module.stephanusRef} locates
+              the source passage; the wording here is not the transmitted text.
+            </span>
+          ) : (
+            <span>
+              <strong className="text-[#2D2A26] uppercase tracking-wider">Composed for study.</strong>{" "}
+              Written as a teaching text, not drawn from a manuscript tradition.
+              {module.stephanusRef ? ` "${module.stephanusRef}" is a stylistic label, not a citation.` : ""}
+            </span>
+          )}
         </div>
 
         {/* Book Page Footer Marker */}

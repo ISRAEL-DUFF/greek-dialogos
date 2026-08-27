@@ -57,6 +57,20 @@ export interface ModuleCommentary {
   dialectNotes?: string;
 }
 
+/**
+ * Where a module's Greek comes from.
+ *
+ * This matters in a tool that presents text in the visual language of a
+ * critical edition. A learner has no way to tell a genuine citation from an
+ * invented one, and a Stephanus-style reference makes both look equally
+ * authoritative — so the distinction is recorded rather than implied.
+ *
+ *  - "transmitted" — quoted from a text with a manuscript tradition
+ *  - "adapted"     — based on a real work, but reworded or simplified
+ *  - "composed"    — written for teaching; no manuscript tradition exists
+ */
+export type TextProvenance = "transmitted" | "adapted" | "composed";
+
 export interface AncientGreekModule {
   id: string;
   title: string;
@@ -71,6 +85,8 @@ export interface AncientGreekModule {
   commentary?: ModuleCommentary;
   isCustom?: boolean;
   createdAt?: string;
+  /** Defaults to "composed" when absent: the safer claim to make. */
+  provenance?: TextProvenance;
 }
 
 /**
