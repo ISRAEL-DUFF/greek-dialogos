@@ -357,7 +357,7 @@ app.post("/api/tts", async (req, res) => {
     const phoneticText = useModern
       ? text
       : useIPA
-        ? convertToIPAForm(text, { phrasing })
+        ? convertToIPAForm(text, { phrasing, stressDensity })
         : convertToSpokenForm(text, { phrasing, preserveAccents: accents, stressDensity });
 
     // Contextual delivery is opt-in: the client sends `context` only when the

@@ -1405,3 +1405,89 @@ was left alone rather than fixed speculatively alongside a confirmed cause.
 This export predates Defect B's fix, so its clips carry no variant and import
 under the legacy key — they will re-synthesize once on first play. Exports
 written from now on round-trip.
+
+---
+
+## Prosodic binding, and two inert stress controls
+
+### The sentence that exposed the gap
+
+```
+Ἐρυξίμαχε πρῶτον μὲν δεῖ ὑμᾶς μαθεῖν τὴν ἀνθρωπίνην φύσιν καὶ τὰ παθήματα αὐτῆς
+```
+
+Thirteen words in, thirteen groups out — connected speech was a complete no-op,
+and on Reconstructed the on/off outputs were byte-identical.
+
+Every word carries an accent mark, and the grouping rule was "in the clitic list
+**and** unaccented". That rule is right for clitics *proper*, and it is what
+keeps τίς apart from τις. But "not a clitic" is not "not bound": μὲν, τὴν, καὶ
+and τὰ are prosodically weak and lean on a neighbour in speech whatever the page
+shows. Four of them carry a **grave**, which is precisely the mark for an accent
+*suppressed in context*.
+
+Keying on the grave alone would have been too narrow — τοῦ and τῷ are weak too
+and carry a circumflex — so membership is the test for this class. It therefore
+stays a **closed list**, and the clitic lists keep their unaccented requirement.
+Relaxing that test there would undo τίς / τις.
+
+**Added.** `WEAK_PROCLITICS` (the whole article paradigm, prepositions, καί and
+other coordinators, the negatives) bind forward; `POSTPOSITIVES` (μέν, δέ, γάρ,
+οὖν, δή …) bind back. Both regardless of accent.
+
+```
+before:  Ἐρυξίμαχε | πρῶτον | μὲν | δεῖ | ὑμᾶς | μαθεῖν | τὴν | ἀνθρωπίνην |
+         φύσιν | καὶ | τὰ | παθήματα | αὐτῆς                        (13)
+after:   Ἐρυξίμαχε | πρῶτον‿μὲν | δεῖ | ὑμᾶς | μαθεῖν |
+         τὴν‿ἀνθρωπίνην | φύσιν | καὶ‿τὰ‿παθήματα | αὐτῆς            (9)
+```
+
+Full noun phrases (`τὴν ἀνθρωπίνην φύσιν` as one unit) would need syntax; the
+article binds to its immediate neighbour and stops there.
+
+### Weak words no longer take the stress mark
+
+`téhn anthrohpínehn` puts the prominence on the article. `canTakeStress` now
+excludes every prosodically weak word, in both transcribers, and the nuclear
+stress search skips groups whose only accented word is weak.
+
+### Two inert controls
+
+**Reconstructed ignored stress density entirely.** `server.ts` called
+`convertToIPAForm(text, { phrasing })` and the converter had no such option, so
+all three settings produced identical IPA. Implemented with the same semantics as
+Erasmian, defaulting to `all` — the marking it has always produced.
+
+Reconstructed Attic had a pitch accent, not a stress accent, so `ˈ` marks the
+accented syllable rather than emphasis. Thinning the marks asks the engine to
+stop hammering every word; it does not claim the accent was absent.
+
+**Erasmian ignored it whenever connected speech was off.** `convertToSpokenForm`
+returned early on `phrasing: false`, down a path that honours `preserveAccents`
+but not `stressDensity`. Word-by-word now runs through the same pipeline with
+singleton groups.
+
+### Cache generation
+
+Improving a transcriber leaves every cached clip keyed as though it were current
+— the same fault class as a colliding key, only slower to notice. `settingsVariant`
+now appends a `TRANSCRIBER_GENERATION`, bumped to `2`.
+
+**Modern is deliberately excluded.** It is passed through untranscribed, so none
+of this changed a byte of its output, and churning its cache would spend real
+credits on identical audio. Erasmian and Reconstructed re-render once.
+
+### Verified matrix
+
+| control | Modern | Erasmian | Reconstructed |
+|---|---|---|---|
+| Connected speech | n/a by design | yes | yes |
+| Stress marking | n/a by design | yes, phrasing on **or** off | yes |
+
+The settings panel now disables both on Modern and says why, rather than showing
+live controls that do nothing.
+
+161 tests pass. Known limits left alone: full-NP binding needs syntax; `ου`,
+`οι`, `εις` remain genuinely ambiguous and keep the proclitic reading; Modern's
+variant still folds in flow and stress, so toggling them re-renders identical
+Modern audio — harmless, and fixing it would invalidate existing Modern caches.

@@ -39,7 +39,7 @@ const PHRASE_BREAK = /[,.;·;!?:·«»""()—–]/;
 /** Apostrophes marking elision, straight and typographic. */
 const ELISION = /['’᾽ʼ]$/;
 
-export type JoinReason = "proclitic" | "enclitic" | "elision" | "none";
+export type JoinReason = "proclitic" | "enclitic" | "elision" | "weak" | "postpositive" | "none";
 
 export interface PhraseGroup {
   /** Original orthographic words, verbatim and in order. */
@@ -77,6 +77,81 @@ const ENCLITICS = new Set([
   "ειμι", "εστι", "εστιν", "εσμεν", "εστε", "εισι", "εισιν",
   "φημι", "φησι", "φησιν", "φαμεν", "φατε", "φασι", "φασιν",
 ]);
+
+/**
+ * PROSODICALLY WEAK WORDS — the third category.
+ *
+ * The two lists above hold clitics *proper*: words with no accent at all. But
+ * "not a clitic" is not "not bound". A sentence built entirely from articles,
+ * prepositions and particles — every one of them bearing an accent mark — was
+ * left completely ungrouped, because each word failed the unaccented test:
+ *
+ *   Ἐρυξίμαχε πρῶτον μὲν δεῖ ὑμᾶς μαθεῖν τὴν ἀνθρωπίνην φύσιν καὶ τὰ παθήματα αὐτῆς
+ *
+ * Thirteen words, thirteen groups, nothing joined. Yet μὲν, τὴν, καὶ and τὰ are
+ * prosodically weak: they lean on a neighbour in speech whatever the page shows.
+ *
+ * The grave accent on several of them is the clue. A grave marks an accent that
+ * is *suppressed in context* — τήν is oxytone alone, but written τὴν before its
+ * noun the grave says the accent is not realised here. Keying on the grave alone
+ * would be too narrow, though: τοῦ and τῷ are weak too and carry a circumflex.
+ * So membership, not accent, is the test for this class — which is exactly why
+ * it must stay a *closed* list, and why the clitic lists above keep their
+ * unaccented requirement. Relaxing that test there would undo τίς / τις.
+ */
+
+/** Function words that lean forward onto what follows, whatever accent they bear. */
+const WEAK_PROCLITICS = new Set([
+  // the article, every form — the oblique forms are not proclitics in the
+  // grammarian's sense, but they are still bound to their noun in speech
+  "ο", "η", "το", "οι", "αι", "τα",
+  "του", "της", "των", "τω", "τη", "τοις", "ταις", "τῳ", "τῃ",
+  "τον", "την", "τους", "τας",
+  // prepositions
+  "εν", "εις", "ες", "εκ", "εξ", "προς", "δια", "κατα", "μετα", "παρα",
+  "περι", "υπο", "επι", "απο", "συν", "ανα", "υπερ", "αντι", "προ", "αμφι",
+  "ενεκα", "χωρις", "ανευ",
+  // coordinators and subordinators that lean on what they introduce
+  "και", "ουδε", "μηδε", "αλλα", "ουτε", "μητε", "ως", "ει", "εαν", "οτι", "ινα",
+  // the negatives
+  "ου", "ουκ", "ουχ", "μη",
+]);
+
+/**
+ * Postpositives: never begin a clause, and lean back on the word before them.
+ *
+ * Not enclitics — they keep their own accent and do not throw it onto the host —
+ * but they are unstressable and phonologically bound to the left.
+ */
+const POSTPOSITIVES = new Set([
+  "μεν", "δε", "γαρ", "ουν", "δη", "μην", "τοινυν", "μεντοι", "καιτοι", "αρα", "αυ",
+]);
+
+/** True for a function word that leans forward regardless of its accent. */
+export function isWeakProclitic(word: string): boolean {
+  return WEAK_PROCLITICS.has(bareForm(word));
+}
+
+/** True for a particle that leans back regardless of its accent. */
+export function isPostpositive(word: string): boolean {
+  return POSTPOSITIVES.has(bareForm(word));
+}
+
+/**
+ * True for any word that should never carry a stress mark.
+ *
+ * A bound function word taking the accent is worse than no grouping at all:
+ * `téhn anthrohpínehn` puts the prominence on the article. Used by the
+ * transcribers to keep the mark on the group's lexical head.
+ */
+export function isProsodicallyWeak(word: string): boolean {
+  return (
+    isWeakProclitic(word) ||
+    isPostpositive(word) ||
+    isProclitic(word) ||
+    isEnclitic(word)
+  );
+}
 
 /**
  * Words that appear in both lists. The proclitic reading wins, because the
@@ -173,10 +248,26 @@ export function groupPhonologicalWords(text: string): PhraseGroup[] {
         reason = reason === "none" ? "proclitic" : reason;
         continue;
       }
+      // A function word leaning forward, accent or no accent. Checked after the
+      // true proclitics so the more specific reason is the one reported.
+      if (isWeakProclitic(tail)) {
+        group.push(next);
+        reason = reason === "none" ? "weak" : reason;
+        continue;
+      }
       // The next word leans back onto this group.
       if (isEnclitic(next)) {
         group.push(next);
         reason = reason === "none" ? "enclitic" : reason;
+        continue;
+      }
+      // A postpositive particle leans back too, but keeps its own accent.
+      // It must not start a group, which the greedy scan already guarantees:
+      // it is only ever absorbed as `next`, never reached as a fresh `i`
+      // unless it genuinely opens the line.
+      if (isPostpositive(next)) {
+        group.push(next);
+        reason = reason === "none" ? "postpositive" : reason;
         continue;
       }
       break;

@@ -10,11 +10,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import {
-  groupPhonologicalWords,
-  isProclitic,
-  isEnclitic,
-} from "../src/utils/phrasing";
+import { groupPhonologicalWords, isProclitic, isEnclitic } from "../src/utils/phrasing";
 import { convertToSpokenForm } from "../src/utils/phoneticConverter";
 
 const groupsOf = (text: string) =>
@@ -152,12 +148,28 @@ describe("fusion never invents a phoneme", () => {
 describe("stress marking", () => {
   test("acute and circumflex are marked as stress", () => {
     assert.equal(convertToSpokenForm("πολύ", { preserveAccents: true }), "polú");
-    assert.equal(convertToSpokenForm("τῷ", { preserveAccents: true }), "tóh");
+    // A lexical word with a circumflex. The dative article τῷ used to stand
+    // here, which tested the wrong thing: it is a function word, and function
+    // words are exactly what must never carry the mark.
+    assert.equal(convertToSpokenForm("σῶμα", { preserveAccents: true }), "sóhma");
   });
 
   test("the grave is NOT marked — it is a suppressed accent", () => {
     assert.equal(convertToSpokenForm("τὸ", { preserveAccents: true }), "to");
-    assert.equal(convertToSpokenForm("τὸν λόγον", { preserveAccents: true }), "ton lógon");
+    // τὸν binds forward now, so the pair fuses; the point stands either way —
+    // the grave leaves no mark while the noun keeps its own.
+    assert.equal(convertToSpokenForm("τὸν λόγον", { preserveAccents: true }), "tonlógon");
+    assert.equal(
+      convertToSpokenForm("τὸν λόγον", { preserveAccents: true, phrasing: false }),
+      "ton lógon"
+    );
+  });
+
+  test("a prosodically weak word never takes the mark", () => {
+    // The article is bound to its noun; marking it would put the prominence
+    // on the wrong word.
+    assert.equal(convertToSpokenForm("τῷ", { preserveAccents: true }), "toh");
+    assert.equal(convertToSpokenForm("καὶ", { preserveAccents: true }), "kai");
   });
 
   test("accents are off by default", () => {
@@ -201,5 +213,65 @@ describe("stress density", () => {
 
   test("phrasing still applies with no stress marks at all", () => {
     assert.equal(convertToSpokenForm("οὐκ ἐν", { phrasing: true, stressDensity: "none" }), "ooken");
+  });
+});
+
+
+describe("prosodically weak words bind to their neighbours", () => {
+  const groups = (t: string) => groupPhonologicalWords(t).map((g) => g.words.join("+"));
+
+  // These words carry accents, so they are not clitics and the unaccented test
+  // rejects them. They are still bound in speech, which left sentences built
+  // from function words completely ungrouped.
+  test("the oblique article binds forward despite its accent", () => {
+    assert.deepEqual(groups("τὴν ἀνθρωπίνην"), ["τὴν+ἀνθρωπίνην"]);
+    assert.deepEqual(groups("τοῦ ὅλου"), ["τοῦ+ὅλου"]);
+  });
+
+  test("καί binds forward", () => {
+    assert.deepEqual(groups("καὶ τὰ παθήματα"), ["καὶ+τὰ+παθήματα"]);
+  });
+
+  test("a postpositive particle binds back", () => {
+    assert.deepEqual(groups("πρῶτον μὲν"), ["πρῶτον+μὲν"]);
+    assert.deepEqual(groups("λέγει γάρ"), ["λέγει+γάρ"]);
+  });
+
+  test("the sentence that exposed the gap now groups", () => {
+    const line =
+      "Ἐρυξίμαχε πρῶτον μὲν δεῖ ὑμᾶς μαθεῖν τὴν ἀνθρωπίνην φύσιν καὶ τὰ παθήματα αὐτῆς";
+    const g = groups(line);
+    assert.equal(line.split(/\s+/).length, 13);
+    assert.ok(g.length < 13, `still ungrouped: ${JSON.stringify(g)}`);
+    assert.ok(g.includes("πρῶτον+μὲν"), JSON.stringify(g));
+    assert.ok(g.includes("τὴν+ἀνθρωπίνην"), JSON.stringify(g));
+  });
+
+  test("the accent still decides for true clitics", () => {
+    // The relaxed test must not leak into the clitic lists, or τίς / τις breaks.
+    assert.deepEqual(groups("τίς ἐστιν;"), ["τίς", "ἐστιν;"]);
+    assert.deepEqual(groups("ἄνθρωπός τις ἦλθεν"), ["ἄνθρωπός+τις", "ἦλθεν"]);
+  });
+
+  test("a group still never crosses phrase-final punctuation", () => {
+    assert.deepEqual(groups("φίλε! καὶ σύ"), ["φίλε!", "καὶ+σύ"]);
+  });
+});
+
+describe("stress density applies without phrasing", () => {
+  // With phrasing off this used to return early, so every density produced the
+  // same fully accented string and the control did nothing.
+  const line = "Χαῖρε, ὦ φίλε! Ποῖ βαδίζεις;";
+  const opts = (stressDensity: "all" | "phrase" | "none") =>
+    convertToSpokenForm(line, { phrasing: false, preserveAccents: true, stressDensity });
+  const marks = (s: string) => (s.normalize("NFD").match(/\u0301/g) || []).length;
+
+  test("the three densities differ", () => {
+    assert.equal(new Set([opts("all"), opts("phrase"), opts("none")]).size, 3);
+  });
+
+  test("none strips every mark, all keeps the most", () => {
+    assert.equal(marks(opts("none")), 0);
+    assert.ok(marks(opts("all")) > marks(opts("phrase")), opts("all"));
   });
 });

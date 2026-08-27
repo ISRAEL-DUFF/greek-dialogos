@@ -117,9 +117,27 @@ export function saveSettings(settings: SpeechSettings): void {
  * rendered under different settings. Contextual delivery is excluded: it has
  * its own per-line hash, since it depends on the neighbouring line too.
  */
+/**
+ * Bumped whenever the transcribers change what they emit for the same settings.
+ *
+ * Without this, improving the phrasing rules leaves every previously cached clip
+ * keyed as if it were current, and the app confidently serves audio rendered by
+ * the old engine — the same class of fault as a colliding cache key, just slower
+ * to notice.
+ *
+ * Generation 2: prosodically weak function words (the article, prepositions,
+ * καί, postpositive particles) now bind to their neighbours and never carry the
+ * stress mark; stress density is honoured word-by-word and in Reconstructed.
+ * Modern is deliberately excluded — it is passed through untranscribed, so none
+ * of that changed a single byte of its output, and churning its cache would
+ * cost real credits for identical audio.
+ */
+const TRANSCRIBER_GENERATION = "2";
+
 export function settingsVariant(settings: SpeechSettings): string {
   const scheme = settings.pronunciation[0]; // m / e / r
   const flow = settings.connectedSpeech ? "f" : "-";
   const stress = settings.stressDensity[0]; // a / p / n
-  return `${scheme}${flow}${stress}`;
+  const base = `${scheme}${flow}${stress}`;
+  return settings.pronunciation === "modern" ? base : `${base}${TRANSCRIBER_GENERATION}`;
 }

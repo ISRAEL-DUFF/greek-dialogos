@@ -29,7 +29,8 @@
  * invented glide; and the circumflex recovers the length of α ι υ.
  */
 
-import { groupPhonologicalWords } from "./phrasing.js";
+import { StressDensity } from "./phoneticConverter.js";
+import { groupPhonologicalWords, isProsodicallyWeak, PhraseGroup } from "./phrasing.js";
 
 const ROUGH = "̔";
 const SMOOTH = "̓";
@@ -41,6 +42,14 @@ const IOTA_SUB = "ͅ";
 const DIAERESIS = "̈";
 
 const STRESS = "ˈ"; // ˈ primary stress, precedes the syllable
+
+/** Sentence-final punctuation. Mirrors the Erasmian transcriber exactly. */
+const PHRASE_FINAL = /[.;·;!?]$/;
+
+/** Remove every stress mark from a transcribed chunk. */
+function stripStress(ipa: string): string {
+  return ipa.split(STRESS).join("");
+}
 const LONG = "ː"; // ː
 const NONSYL = "̯"; // ̯ marks the second element of a diphthong
 
@@ -261,6 +270,16 @@ export function convertWordToIPA(word: string): string {
 export interface IPAOptions {
   /** Group proclitics and enclitics with their hosts. Default true. */
   phrasing?: boolean;
+  /**
+   * How many words carry a stress mark. Default "all", which is the marking
+   * this converter has always produced.
+   *
+   * Reconstructed Attic had a pitch accent rather than a stress accent, so ˈ
+   * here stands for the accented syllable, not for emphasis. Thinning the marks
+   * asks the engine to stop hammering every word; it does not assert that the
+   * accent was absent.
+   */
+  stressDensity?: StressDensity;
 }
 
 /**
@@ -275,16 +294,37 @@ export interface IPAOptions {
 export function convertToIPAForm(text: string, options: IPAOptions = {}): string {
   if (!text) return "";
   const usePhrasing = options.phrasing !== false;
+  const density: StressDensity = options.stressDensity ?? "all";
 
-  if (!usePhrasing) {
-    return text
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(convertWordToIPA)
-      .join(" ");
+  const groups: PhraseGroup[] = usePhrasing
+    ? groupPhonologicalWords(text)
+    : text.split(/\s+/).filter(Boolean).map((w) => ({ words: [w], join: "none" as const }));
+
+  // Transcribe first, then thin the marks. Deciding stress on the Greek and
+  // deciding it on the IPA must not diverge, so there is one selection here and
+  // the transcriber stays unaware of density.
+  const rendered = groups.map((group) =>
+    group.words
+      .map((w) => (isProsodicallyWeak(w) ? stripStress(convertWordToIPA(w)) : convertWordToIPA(w)))
+      .join(usePhrasing ? "" : " ")
+  );
+
+  if (density === "all") return rendered.join(" ");
+  if (density === "none") return rendered.map(stripStress).join(" ");
+
+  // "phrase": one mark per intonational phrase, on its last markable group.
+  const keep = new Array<boolean>(rendered.length).fill(false);
+  let start = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const last = groups[i].words[groups[i].words.length - 1];
+    if (!PHRASE_FINAL.test(last) && i !== groups.length - 1) continue;
+    for (let j = i; j >= start; j--) {
+      if (rendered[j].includes(STRESS)) {
+        keep[j] = true;
+        break;
+      }
+    }
+    start = i + 1;
   }
-
-  return groupPhonologicalWords(text)
-    .map((group) => group.words.map(convertWordToIPA).join(""))
-    .join(" ");
+  return rendered.map((r, i) => (keep[i] ? r : stripStress(r))).join(" ");
 }

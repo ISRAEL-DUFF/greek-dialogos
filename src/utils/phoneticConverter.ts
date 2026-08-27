@@ -369,7 +369,7 @@ function hasStressAccentInRange(chars: string[], start: number, end: number): bo
  * keeps every mark attached to the word that owns it.
  */
 
-import { groupPhonologicalWords, PhraseGroup } from "./phrasing.js";
+import { groupPhonologicalWords, isProsodicallyWeak, PhraseGroup } from "./phrasing.js";
 
 const VOWEL_START = /^[aeiouāēīōū]/i;
 const CONSONANT_END = /[bcdfghjklmnpqrstvwxyz]$/i;
@@ -443,6 +443,17 @@ export type StressDensity = "all" | "phrase" | "none";
 const NEVER_STRESSED = new Set(["ω", "ωι"]);
 
 /**
+ * May this word carry the group's stress mark?
+ *
+ * A bound function word taking the accent is worse than leaving the group
+ * unmarked — `téhn anthrohpínehn` puts the prominence on the article. The
+ * mark belongs on the group's lexical head.
+ */
+function canTakeStress(word: string): boolean {
+  return !NEVER_STRESSED.has(bareWord(word)) && !isProsodicallyWeak(word);
+}
+
+/**
  * Sentence-final punctuation only. A comma is a minor break that does not
  * start a new intonational phrase — treating it as one gives "Χαῖρε," its own
  * nuclear stress, so a three-word greeting ends up with two prominences.
@@ -479,11 +490,13 @@ function isAccentedWord(word: string): boolean {
  */
 export function convertToSpokenForm(text: string, options: SpokenFormOptions = {}): string {
   if (!text) return "";
-  if (options.phrasing === false) {
-    return convertToReconstructedPhonetics(text, options);
-  }
-
-  const groups: PhraseGroup[] = groupPhonologicalWords(text);
+  // Word-by-word still respects the stress setting. Previously this returned
+  // early, so with phrasing off all three densities produced the same fully
+  // accented string and the control silently did nothing.
+  const groups: PhraseGroup[] =
+    options.phrasing === false
+      ? text.split(/\s+/).filter(Boolean).map((w) => ({ words: [w], join: "none" as const }))
+      : groupPhonologicalWords(text);
   const density: StressDensity = options.stressDensity ?? "phrase";
   const wantAccents = Boolean(options.preserveAccents) && density !== "none";
 
@@ -500,7 +513,7 @@ export function convertToSpokenForm(text: string, options: SpokenFormOptions = {
 
       // Nuclear stress falls on the last accented word of the phrase.
       for (let j = i; j >= start; j--) {
-        if (groups[j].words.some(isAccentedWord)) {
+        if (groups[j].words.some((w) => isAccentedWord(w) && canTakeStress(w))) {
           allowed[j] = true;
           break;
         }
@@ -517,7 +530,7 @@ export function convertToSpokenForm(text: string, options: SpokenFormOptions = {
           convertToReconstructedPhonetics(
             word,
             // Never let an excluded particle take the mark within its group.
-            groupOptions.preserveAccents && !NEVER_STRESSED.has(bareWord(word))
+            groupOptions.preserveAccents && canTakeStress(word)
               ? groupOptions
               : { ...groupOptions, preserveAccents: false }
           )

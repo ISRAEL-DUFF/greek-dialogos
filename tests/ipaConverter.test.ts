@@ -126,3 +126,39 @@ describe("phrasing is shared with the Latin path", () => {
     assert.equal(out, "eˈɡɔːeːmi");
   });
 });
+
+describe("stress density in Reconstructed", () => {
+  // convertToIPAForm never received stressDensity, so the control was inert on
+  // this scheme: all three settings produced byte-identical IPA.
+  const text = "Ἔστι δὴ οὖν τοῦ ὅλου ἐπιθυμία καὶ δίωξις Ἔρως καλούμενος.";
+  const out = (stressDensity: "all" | "phrase" | "none") =>
+    line(text, { phrasing: true, stressDensity });
+  const marks = (s: string) => (s.match(/ˈ/g) || []).length;
+
+  test("the three densities differ", () => {
+    assert.equal(new Set([out("all"), out("phrase"), out("none")]).size, 3);
+  });
+
+  test("none removes every stress mark", () => {
+    assert.equal(marks(out("none")), 0);
+  });
+
+  test("phrase keeps exactly one mark for a single sentence", () => {
+    assert.equal(marks(out("phrase")), 1);
+  });
+
+  test("all keeps a mark on each lexical word", () => {
+    assert.ok(marks(out("all")) > 1, out("all"));
+  });
+
+  test("defaults to full marking, the long-standing behaviour", () => {
+    assert.equal(line(text, { phrasing: true }), out("all"));
+  });
+
+  test("weak function words carry no mark even at 'all'", () => {
+    // τοῦ and καί are bound; the mark belongs on their heads.
+    const all = out("all");
+    assert.ok(!all.includes("ˈtuː"), all);
+    assert.ok(!all.includes("ˈkai̯"), all);
+  });
+});
