@@ -164,3 +164,42 @@ describe("stress marking", () => {
     assert.equal(convertToSpokenForm("πολύ"), "polu");
   });
 });
+
+describe("stress density", () => {
+  const line = "Χαῖρε, ὦ φίλε! Ποῖ βαδίζεις;";
+  const marks = (s: string) => (s.normalize("NFD").match(/́/g) || []).length;
+
+  test("'all' marks every accented word", () => {
+    const out = convertToSpokenForm(line, { phrasing: true, preserveAccents: true, stressDensity: "all" });
+    assert.ok(marks(out) >= 3, out);
+  });
+
+  test("'phrase' gives one nuclear stress per sentence", () => {
+    // Two sentences here, so two marks — not one per word.
+    const out = convertToSpokenForm(line, { phrasing: true, preserveAccents: true, stressDensity: "phrase" });
+    assert.equal(marks(out), 2, out);
+  });
+
+  test("'none' marks nothing", () => {
+    const out = convertToSpokenForm(line, { phrasing: true, preserveAccents: true, stressDensity: "none" });
+    assert.equal(marks(out), 0, out);
+  });
+
+  test("a comma does not start a new intonational phrase", () => {
+    // "Χαῖρε, ὦ φίλε!" is one phrase; splitting on the comma would give
+    // Χαῖρε its own nucleus and a three-word greeting two prominences.
+    const out = convertToSpokenForm("Χαῖρε, ὦ φίλε!", { phrasing: true, preserveAccents: true, stressDensity: "phrase" });
+    assert.equal(marks(out), 1, out);
+  });
+
+  test("ὦ never carries stress, though it is written with a circumflex", () => {
+    for (const d of ["all", "phrase"] as const) {
+      const out = convertToSpokenForm("ὦ φίλε", { phrasing: true, preserveAccents: true, stressDensity: d });
+      assert.ok(/\boh\b/.test(out), `ὦ was stressed at density ${d}: ${out}`);
+    }
+  });
+
+  test("phrasing still applies with no stress marks at all", () => {
+    assert.equal(convertToSpokenForm("οὐκ ἐν", { phrasing: true, stressDensity: "none" }), "ooken");
+  });
+});

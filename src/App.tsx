@@ -73,6 +73,18 @@ export default function App() {
    * renderings are cached separately and can be compared on the same line.
    */
   const [useConnectedSpeech, setUseConnectedSpeech] = useState<boolean>(true);
+
+  /**
+   * How much stress the engine marks. Sent explicitly and folded into the
+   * audio cache key, so changing it here invalidates clips rendered under the
+   * previous setting rather than serving them for the new one.
+   *
+   * "none" for now: the marks ARE honoured — every accented word sounded
+   * hammered — so this is a question of how much prominence helps, not whether
+   * it works. "phrase" (one nuclear stress per sentence) and "all" remain
+   * available on the API.
+   */
+  const STRESS_DENSITY = "none" as const;
   
   // Display mode
   const [displayMode, setDisplayMode] = useState<DisplayMode>("all");
@@ -246,7 +258,7 @@ export default function App() {
   const fetchLineAudioBuffer = async (line: DialogueLine): Promise<AudioBuffer> => {
     const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
     const { context, variant: ctxVariant } = buildLineContext(line, currentModule);
-    const variant = useConnectedSpeech ? `${ctxVariant}flow` : ctxVariant;
+    const variant = useConnectedSpeech ? `${ctxVariant}flow-${STRESS_DENSITY}` : ctxVariant;
 
     // 1. Check IndexedDB cache first
     const cached = await audioStorage.getCachedAudio(currentModule.id, line.id, voice, variant);
@@ -265,6 +277,7 @@ export default function App() {
         context,
         phrasing: useConnectedSpeech,
         accents: useConnectedSpeech,
+        stressDensity: STRESS_DENSITY,
       }),
     });
 
@@ -326,7 +339,7 @@ export default function App() {
 
       const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
       const { context, variant: ctxVariant } = buildLineContext(line, mod);
-      const variant = useConnectedSpeech ? `${ctxVariant}flow` : ctxVariant;
+      const variant = useConnectedSpeech ? `${ctxVariant}flow-${STRESS_DENSITY}` : ctxVariant;
       const existing = await audioStorage.getCachedAudio(mod.id, line.id, voice, variant);
 
       if (existing) {
@@ -343,6 +356,7 @@ export default function App() {
               context,
               phrasing: useConnectedSpeech,
               accents: useConnectedSpeech,
+              stressDensity: STRESS_DENSITY,
             }),
             signal: controller.signal,
           });

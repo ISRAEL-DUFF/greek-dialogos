@@ -303,6 +303,11 @@ app.post("/api/tts", async (req, res) => {
       // "latin" respells Greek using English spelling conventions; "ipa"
       // states the sounds directly and sidesteps the guesswork entirely.
       notation = "latin",
+      // "none" by default: marking every accented word sounded hammered, and
+      // even one nuclear stress per sentence was more than wanted. The marks
+      // are demonstrably honoured by the engine, so this is a judgement about
+      // how much prominence helps, not about whether it works.
+      stressDensity = "none",
     } = req.body;
     if (!text) {
       return res.status(400).json({ error: "Text is required" });
@@ -321,7 +326,7 @@ app.post("/api/tts", async (req, res) => {
     const useIPA = notation === "ipa";
     const phoneticText = useIPA
       ? convertToIPAForm(text, { phrasing })
-      : convertToSpokenForm(text, { phrasing, preserveAccents: accents });
+      : convertToSpokenForm(text, { phrasing, preserveAccents: accents, stressDensity });
 
     // Contextual delivery is opt-in: the client sends `context` only when the
     // experimental toggle is on, so default behaviour is byte-identical.
@@ -347,6 +352,7 @@ app.post("/api/tts", async (req, res) => {
           phrasing: Boolean(phrasing),
           accents: Boolean(accents),
           notation,
+          stressDensity,
         });
       } catch (openRouterErr: any) {
         console.warn("OpenRouter TTS failed, attempting fallback to Gemini if available:", openRouterErr?.message);

@@ -415,9 +415,54 @@ function joinAtSeam(left: string, right: string): string {
   return left + tail;
 }
 
+/**
+ * How many words carry a stress mark.
+ *
+ * Greek orthography accents nearly every word, but speech does not give every
+ * word prominence. Marking them all tells the engine to emphasise everything,
+ * which sounds hammered and — because prominence is relative — flattens the
+ * contour it was meant to create.
+ *
+ *  - "all"    every accented word. Orthographically faithful, prosodically wrong.
+ *  - "phrase" one nuclear stress per phrase, on its last accented word. Closest
+ *             to how a sentence is actually spoken.
+ *  - "none"   no marks; rely on phrasing alone.
+ */
+export type StressDensity = "all" | "phrase" | "none";
+
+/**
+ * Words that never carry the nuclear stress, even though the orthography
+ * accents them. ὦ is the clear case: a vocative particle leaning on the name
+ * that follows, yet written with a circumflex.
+ */
+const NEVER_STRESSED = new Set(["ω", "ωι"]);
+
+/**
+ * Sentence-final punctuation only. A comma is a minor break that does not
+ * start a new intonational phrase — treating it as one gives "Χαῖρε," its own
+ * nuclear stress, so a three-word greeting ends up with two prominences.
+ */
+const PHRASE_FINAL = /[.;·;!?]$/;
+
 export interface SpokenFormOptions extends PhoneticOptions {
   /** Set false to transcribe word-by-word, i.e. the pre-phrasing behaviour. */
   phrasing?: boolean;
+  /** Default "phrase". Ignored unless preserveAccents is on. */
+  stressDensity?: StressDensity;
+}
+
+/** Strip diacritics and punctuation for a lexical lookup. */
+function bareWord(word: string): string {
+  return word
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f\u0345]/g, "")
+    .replace(/[^\p{L}]/gu, "")
+    .toLowerCase();
+}
+
+function isAccentedWord(word: string): boolean {
+  const nfd = word.normalize("NFD");
+  return /[\u0301\u0342\u0303]/.test(nfd) && !NEVER_STRESSED.has(bareWord(word));
 }
 
 /**
@@ -434,12 +479,45 @@ export function convertToSpokenForm(text: string, options: SpokenFormOptions = {
   }
 
   const groups: PhraseGroup[] = groupPhonologicalWords(text);
+  const density: StressDensity = options.stressDensity ?? "phrase";
+  const wantAccents = Boolean(options.preserveAccents) && density !== "none";
+
+  // Decide, per group, whether it may carry a stress mark.
+  const allowed = new Array<boolean>(groups.length).fill(wantAccents);
+
+  if (wantAccents && density === "phrase") {
+    allowed.fill(false);
+    let start = 0;
+    for (let i = 0; i < groups.length; i++) {
+      const isLast = i === groups.length - 1;
+      const endsHere = PHRASE_FINAL.test(groups[i].words[groups[i].words.length - 1]);
+      if (!endsHere && !isLast) continue;
+
+      // Nuclear stress falls on the last accented word of the phrase.
+      for (let j = i; j >= start; j--) {
+        if (groups[j].words.some(isAccentedWord)) {
+          allowed[j] = true;
+          break;
+        }
+      }
+      start = i + 1;
+    }
+  }
 
   return groups
-    .map((group) =>
-      group.words
-        .map((word) => convertToReconstructedPhonetics(word, options))
-        .reduce((acc, part) => (acc ? joinAtSeam(acc, part) : part), "")
-    )
+    .map((group, index) => {
+      const groupOptions = { ...options, preserveAccents: allowed[index] };
+      return group.words
+        .map((word) =>
+          convertToReconstructedPhonetics(
+            word,
+            // Never let an excluded particle take the mark within its group.
+            groupOptions.preserveAccents && !NEVER_STRESSED.has(bareWord(word))
+              ? groupOptions
+              : { ...groupOptions, preserveAccents: false }
+          )
+        )
+        .reduce((acc, part) => (acc ? joinAtSeam(acc, part) : part), "");
+    })
     .join(" ");
 }

@@ -768,6 +768,40 @@ This is a fact about the current TTS model, not about IPA. The path is kept and 
 
 ---
 
+## Stress density — reduced to none (2026-08-27)
+
+Connected speech shipped marking **every** accented word. On listening, that was too much stress.
+
+That report settled a question an acoustic probe had left open: **the marks are honoured by the engine.** Earlier I could only measure one variant before the provider began returning `502: empty audio stream`, so whether a combining acute moved the prominence was unknown. It does.
+
+### Why marking everything is wrong
+
+Greek orthography accents nearly every word, but speech gives a phrase one nuclear prominence. Marking them all instructs the engine to emphasise everything — which sounds hammered and, because prominence is relative, flattens the contour it was meant to create.
+
+### Three levels
+
+`stressDensity` on `/api/tts`:
+
+| | behaviour | example |
+|---|---|---|
+| `all` | every accented word | `Kháire, óh phíle! Pói badízdeis;` |
+| `phrase` | one nuclear stress per sentence, on its last accented word | `Khaire, oh phíle! Poi badízdeis;` |
+| `none` | **default** — no marks; phrasing alone | `Khaire, oh phile! Poi badizdeis;` |
+
+**A comma does not start an intonational phrase.** The first implementation split on commas, so `Χαῖρε,` took its own nucleus and a three-word greeting still carried two prominences. Sentence-final punctuation only.
+
+**`ὦ` is never stressed.** A vocative particle leaning on the name after it, yet written with a circumflex — so it was taking full prominence in every greeting. It sits on a never-stressed list.
+
+### Cache safety
+
+`stressDensity` is folded into the audio cache variant (`flow-none`), so changing it invalidates clips rendered under the previous setting instead of serving them for the new one. Both cache-key sites carry it — the first patch missed the playback path, which would have served stale audio for every line already heard.
+
+### Status
+
+`none` is the current default, chosen provisionally. `phrase` and `all` remain on the API, and the levels are cheap to switch between — the constant lives at the top of `App.tsx` and the cache key follows it automatically.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
