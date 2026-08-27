@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Header, AppTab } from "./components/Header";
-import { AudioControls } from "./components/AudioControls";
+import { Sidebar, AppTab } from "./components/Sidebar";
 import { DialogueCard } from "./components/DialogueCard";
-import { BookFormatView } from "./components/BookFormatView";
+import { BookFormatView, BookLayoutMode, FontSizeOption } from "./components/BookFormatView";
 import { WordGlossModal } from "./components/WordGlossModal";
 import { CustomTTSSection } from "./components/CustomTTSSection";
 import { RoleplayMode } from "./components/RoleplayMode";
@@ -12,12 +11,22 @@ import { ModuleImporter } from "./components/ModuleImporter";
 import { DEFAULT_MODULE, BUILTIN_MODULES, getStoredCustomModules } from "./data/dialogueData";
 import { DialogueLine, DisplayMode, VoiceName, WordGloss, AncientGreekModule } from "./types";
 import { audioPlayer } from "./utils/audioPlayer";
+import { convertToSpokenForm } from "./utils/phoneticConverter";
+import { convertToIPAForm } from "./utils/ipaConverter";
 import { audioStorage } from "./utils/audioStorage";
 import { exportModuleWithAudio, exportLibraryWithAudio, downloadJsonFile } from "./utils/modulePackage";
-import { BookOpen, Layers, Sparkles } from "lucide-react";
+import { gapAfter, loopRestartGap, lineRepeatGap } from "./utils/dialogueTiming";
+import { useOnlineStatus } from "./utils/useOnlineStatus";
+import { AUDIO_CACHE_BUDGET_BYTES, getKeepOfflineIds } from "./utils/offlinePrefs";
+import { SettingsDrawer } from "./components/SettingsDrawer";
+import { ControlRail } from "./components/ControlRail";
+import { SpeechSettings, loadSettings, saveSettings, settingsVariant } from "./utils/speechSettings";
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>("dialogue");
+  const isOnline = useOnlineStatus();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   
   // Active Module & Library State
   const [customModules, setCustomModules] = useState<AncientGreekModule[]>([]);
@@ -27,6 +36,10 @@ export default function App() {
   const [cachedLineIds, setCachedLineIds] = useState<Set<number>>(new Set());
   const [isPrecaching, setIsPrecaching] = useState(false);
   const [precacheProgress, setPrecacheProgress] = useState<{ current: number; total: number } | null>(null);
+  const [precacheResult, setPrecacheResult] = useState<
+    { cached: number; failed: number; skipped: number; cancelled: boolean } | null
+  >(null);
+  const precacheAbortRef = useRef<AbortController | null>(null);
 
   // Dynamic speaker voices map: { [speakerName]: VoiceName }
   const [speakerVoices, setSpeakerVoices] = useState<Record<string, VoiceName>>(() => {
@@ -45,10 +58,52 @@ export default function App() {
   const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [isLooping, setIsLooping] = useState<boolean>(false);
+  /**
+   * Contextual delivery (docs/FIX-PLAN.md P1-9), off by default.
+   *
+   * Tells the TTS model who is speaking and what they are responding to, so a
+   * reply is not synthesized as an isolated sentence. The benefit is
+   * subjective and may be inaudible, so this stays switchable: turn it on and
+   * off on the same line to compare. Cached audio is keyed separately for each
+   * mode, so switching does not serve the other mode's rendering.
+   */
+  /**
+   * Speech settings, persisted. Replaces three scattered toggles and a
+   * constant; see utils/speechSettings.
+   */
+  const [speechSettings, setSpeechSettings] = useState<SpeechSettings>(() => loadSettings());
+
+  const handleSettingsChange = (next: SpeechSettings) => {
+    setSpeechSettings(next);
+    saveSettings(next);
+  };
+
+  const useContextualDelivery = speechSettings.contextualDelivery;
+
   
   // Display mode
   const [displayMode, setDisplayMode] = useState<DisplayMode>("all");
-  const [dialogueLayoutView, setDialogueLayoutView] = useState<"cards" | "book">("cards");
+  const [dialogueLayoutView, setDialogueLayoutView] = useState<"cards" | "book">(() => {
+    // Book is the default: it carries every teaching feature the cards do -
+    // word glossing, per-line replay, translations, transliteration - with less
+    // chrome. The choice is remembered.
+    try {
+      const saved = localStorage.getItem("greek_dialogos_layout");
+      return saved === "cards" ? "cards" : "book";
+    } catch {
+      return "book";
+    }
+  });
+
+  const handleSetLayout = (l: "cards" | "book") => {
+    setDialogueLayoutView(l);
+    try { localStorage.setItem("greek_dialogos_layout", l); } catch { /* private mode */ }
+  };
+  // Book-view controls live here so the shared rail can drive them; they used
+  // to be local state inside BookFormatView with their own duplicate toolbar.
+  const [bookLayout, setBookLayout] = useState<BookLayoutMode>("greek-manuscript");
+  const [bookFontSize, setBookFontSize] = useState<FontSizeOption>("base");
+  const [showTransliteration, setShowTransliteration] = useState(true);
   
   // Word gloss inspection modal
   const [selectedWord, setSelectedWord] = useState<WordGloss | null>(null);
@@ -57,10 +112,34 @@ export default function App() {
   // Error state for playback
   const [playbackError, setPlaybackError] = useState<string | null>(null);
 
-  // Stop controller ref and loop tracker
-  const stopSequenceRef = useRef<boolean>(false);
+  /**
+   * Playback sequence generation.
+   *
+   * Every play action claims a new generation number. A running sequence
+   * compares its own generation against the current one at each await
+   * boundary and bails the moment it is superseded.
+   *
+   * This replaces a boolean stop flag that was reset after a fixed 20ms
+   * sleep. That sleep was a guess: a sequence awaiting a slow synthesis
+   * request had not reached its stop check within 20ms, so it resumed after
+   * the next sequence began and both played at once. A generation counter is
+   * correct no matter how long a fetch takes, and needs no sleep.
+   */
+  const playbackGenerationRef = useRef<number>(0);
   const isLoopingRef = useRef<boolean>(false);
   const playbackSpeedRef = useRef<number>(playbackSpeed);
+
+  /** Claim a new generation, invalidating any sequence already running. */
+  const beginPlaybackSequence = (): number => {
+    const generation = playbackGenerationRef.current + 1;
+    playbackGenerationRef.current = generation;
+    audioPlayer.stop();
+    return generation;
+  };
+
+  /** True while this sequence is still the active one. */
+  const isCurrentSequence = (generation: number): boolean =>
+    playbackGenerationRef.current === generation;
 
   useEffect(() => {
     isLoopingRef.current = isLooping;
@@ -74,37 +153,73 @@ export default function App() {
     setIsLooping((prev) => !prev);
   };
 
-  // Load custom modules from localStorage on mount
+  // Load custom modules from localStorage on mount, then reconcile the audio
+  // cache against them: a deleted custom module leaves clips behind that are
+  // unreachable but still count against the origin's quota, bringing eviction
+  // of everything else closer.
   useEffect(() => {
     const stored = getStoredCustomModules();
     setCustomModules(stored);
+
+    const knownIds = [...BUILTIN_MODULES, ...stored].map((m) => m.id);
+    // Records written before rendering variants existed cannot be served under
+    // any current setting — they were produced word-by-word with the older
+    // transcription rules. They are what made a module report as downloaded
+    // while every line regenerated.
+    audioStorage
+      .purgeLegacyRecords()
+      .then((n) => {
+        if (n > 0) console.info(`Removed ${n} audio clip(s) predating pronunciation settings.`);
+      })
+      .catch(() => {});
+
+    audioStorage
+      .pruneOrphans(knownIds)
+      .then((removed) => {
+        if (removed > 0) console.info(`Removed ${removed} orphaned audio clip(s).`);
+      })
+      .catch(() => {});
   }, []);
 
-  // Refresh cached line IDs when module changes
-  const refreshCacheStatus = async (moduleId = currentModule.id) => {
+  /**
+   * Count only the lines whose audio playback would actually use, by asking
+   * about the exact identities rather than everything stored for the module.
+   */
+  const refreshCacheStatus = async (mod: AncientGreekModule = currentModule) => {
     try {
-      const ids = await audioStorage.getCachedLineIds(moduleId);
-      setCachedLineIds(ids);
+      const expected = mod.lines.map((line) => {
+        const { voice, variant } = audioIdentityFor(line, mod);
+        return { lineId: line.id, voice, variant };
+      });
+      setCachedLineIds(await audioStorage.getCachedLineIds(mod.id, expected));
     } catch (e) {
       console.warn("Failed to check cached lines:", e);
     }
   };
 
+  // Settings are a dependency: they change the rendering variant, so the same
+  // module can go from fully downloaded to not downloaded without the module
+  // itself changing. The count has to follow.
   useEffect(() => {
-    refreshCacheStatus(currentModule.id);
-  }, [currentModule.id]);
+    refreshCacheStatus(currentModule);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentModule.id, speechSettings, speakerVoices]);
 
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
-      stopSequenceRef.current = true;
+      playbackGenerationRef.current += 1;
       audioPlayer.stop();
+      precacheAbortRef.current?.abort();
     };
   }, []);
 
   // Handle module selection
   const handleSelectModule = (mod: AncientGreekModule) => {
     handleStopPlayback();
+    // A pre-cache run is scoped to one module; abandon it when leaving.
+    precacheAbortRef.current?.abort();
+    setPrecacheResult(null);
     setCurrentModule(mod);
     // Update default voices for the new module's speakers
     const newVoices: Record<string, VoiceName> = {};
@@ -112,7 +227,7 @@ export default function App() {
       newVoices[s.name] = s.defaultVoice || "Fenrir";
     });
     setSpeakerVoices(newVoices);
-    refreshCacheStatus(mod.id);
+    refreshCacheStatus(mod);
   };
 
   const handleCustomModulesChange = () => {
@@ -135,13 +250,95 @@ export default function App() {
   };
 
   /**
+   * Build the English stage direction for a line, plus the cache variant that
+   * identifies the resulting audio.
+   *
+   * The variant folds in the previous line's identity: contextual audio for
+   * line N depends on line N-1, so an edit upstream must not leave line N
+   * serving audio generated under the old context.
+   */
+  const buildLineContext = (line: DialogueLine, mod: AncientGreekModule) => {
+    if (!useContextualDelivery) return { context: undefined, variant: "" };
+
+    const index = mod.lines.findIndex((l) => l.id === line.id);
+    const previous = index > 0 ? mod.lines[index - 1] : null;
+    const speaker = mod.speakers.find((sp) => sp.name === line.speaker);
+
+    const context = {
+      speakerName: line.speakerEn,
+      speakerRole: speaker?.role || line.speakerRole,
+      contextNote: line.contextNote,
+      previousSpeakerName: previous?.speakerEn,
+      previousContextNote: previous?.contextNote,
+    };
+
+    // Short, stable fingerprint of everything the rendering depends on.
+    const fingerprint = JSON.stringify([
+      context.speakerName,
+      context.speakerRole,
+      context.contextNote,
+      context.previousSpeakerName,
+      context.previousContextNote,
+    ]);
+    let hash = 0;
+    for (let i = 0; i < fingerprint.length; i++) {
+      hash = (hash * 31 + fingerprint.charCodeAt(i)) | 0;
+    }
+
+    return { context, variant: `ctx${(hash >>> 0).toString(36)}` };
+  };
+
+  /**
+   * The words of a line paired with the string the engine will actually read.
+   *
+   * Word highlighting is timed from this rather than from the Greek: the two
+   * differ in Erasmian and Reconstructed, and the difference is exactly what
+   * changes relative durations. In Modern the spoken form IS the Greek, so this
+   * returns the source text and the timing is unchanged.
+   *
+   * Converted per word: fusion joins tokens across word boundaries, but the
+   * highlight still tracks one Greek word at a time.
+   */
+  const wordsWithSpokenForm = (line: DialogueLine) => {
+    const scheme = speechSettings.pronunciation;
+    return line.words.map((w) => ({
+      ...w,
+      spoken:
+        scheme === "modern"
+          ? w.greek
+          : scheme === "reconstructed"
+            ? convertToIPAForm(w.greek, { phrasing: false })
+            : convertToSpokenForm(w.greek, {
+                phrasing: false,
+                preserveAccents: true,
+                stressDensity: speechSettings.stressDensity,
+              }),
+    }));
+  };
+
+  /**
+   * The identity a line's audio is stored and looked up under.
+   *
+   * Playback, pre-caching and the cached-lines indicator all derive the key
+   * from here. They previously computed it separately — and the indicator did
+   * not compute it at all, counting every record for the module regardless of
+   * voice or settings, so it reported lines as ready that playback would
+   * regenerate.
+   */
+  const audioIdentityFor = (line: DialogueLine, mod: AncientGreekModule) => {
+    const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
+    const { context, variant: ctxVariant } = buildLineContext(line, mod);
+    return { voice, context, variant: `${ctxVariant}${settingsVariant(speechSettings)}` };
+  };
+
+  /**
    * Fetch TTS audio for a line with IndexedDB caching
    */
   const fetchLineAudioBuffer = async (line: DialogueLine): Promise<AudioBuffer> => {
-    const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
+    const { voice, context, variant } = audioIdentityFor(line, currentModule);
 
     // 1. Check IndexedDB cache first
-    const cached = await audioStorage.getCachedAudio(currentModule.id, line.id, voice);
+    const cached = await audioStorage.getCachedAudio(currentModule.id, line.id, voice, variant);
     if (cached && cached.audioBase64) {
       return await audioPlayer.decodeAudio(cached.audioBase64, cached.mimeType);
     }
@@ -154,6 +351,11 @@ export default function App() {
         text: line.greekText,
         voice,
         speakerName: line.speakerEn,
+        context,
+        phrasing: speechSettings.connectedSpeech,
+        accents: true,
+        stressDensity: speechSettings.stressDensity,
+        pronunciation: speechSettings.pronunciation,
       }),
     });
 
@@ -171,7 +373,8 @@ export default function App() {
       voice,
       data.audio,
       data.mimeType,
-      line.greekText
+      line.greekText,
+      variant
     );
 
     // Update cached lines set
@@ -181,19 +384,43 @@ export default function App() {
   };
 
   /**
-   * Pre-cache all audio lines of a module for offline and instantaneous playback
+   * Pre-cache all audio lines of a module for offline and instantaneous playback.
+   *
+   * Cancellable: each iteration is a billed synthesis request, so a long run
+   * must be stoppable and must abandon its in-flight request rather than
+   * waiting for it. Failures are counted and reported instead of being
+   * swallowed to the console - a run where every request 401s previously
+   * reported as a clean completion.
    */
   const handlePrecacheAudio = async (mod: AncientGreekModule = currentModule) => {
     if (isPrecaching) return;
+
+    const controller = new AbortController();
+    precacheAbortRef.current = controller;
+
+    // Ask for persistent storage before the first bulk download. Without it
+    // the browser may evict this origin's storage wholesale under pressure,
+    // losing a module the user deliberately downloaded.
+    await audioStorage.requestPersistentStorage();
+
     setIsPrecaching(true);
+    setPrecacheResult(null);
     setPrecacheProgress({ current: 0, total: mod.lines.length });
 
     let current = 0;
-    for (const line of mod.lines) {
-      const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
-      const cached = await audioStorage.getCachedAudio(mod.id, line.id, voice);
+    let cached = 0;
+    let failed = 0;
+    let skipped = 0;
 
-      if (!cached) {
+    for (const line of mod.lines) {
+      if (controller.signal.aborted) break;
+
+      const { voice, context, variant } = audioIdentityFor(line, mod);
+      const existing = await audioStorage.getCachedAudio(mod.id, line.id, voice, variant);
+
+      if (existing) {
+        skipped++;
+      } else {
         try {
           const res = await fetch("/api/tts", {
             method: "POST",
@@ -202,8 +429,15 @@ export default function App() {
               text: line.greekText,
               voice,
               speakerName: line.speakerEn,
+              context,
+              phrasing: speechSettings.connectedSpeech,
+              accents: true,
+              stressDensity: speechSettings.stressDensity,
+              pronunciation: speechSettings.pronunciation,
             }),
+            signal: controller.signal,
           });
+
           if (res.ok) {
             const data = await res.json();
             await audioStorage.saveCachedAudio(
@@ -212,20 +446,52 @@ export default function App() {
               voice,
               data.audio,
               data.mimeType,
-              line.greekText
+              line.greekText,
+              variant
             );
+            cached++;
+          } else {
+            failed++;
+            const err = await res.json().catch(() => ({}));
+            console.warn(`Pre-cache failed for line #${line.id}:`, err.error || res.status);
           }
-        } catch (err) {
-          console.warn(`Failed to precache line #${line.id}:`, err);
+        } catch (err: any) {
+          // An abort is a user action, not a failure.
+          if (err?.name === "AbortError") break;
+          failed++;
+          console.warn(`Pre-cache failed for line #${line.id}:`, err);
         }
       }
+
       current++;
       setPrecacheProgress({ current, total: mod.lines.length });
     }
 
-    await refreshCacheStatus(mod.id);
+    // Keep the cache within budget, never evicting modules the user marked to
+    // keep offline - automatic cleanup must not undo a deliberate download.
+    try {
+      const evicted = await audioStorage.evictLeastRecentlyUsed(
+        AUDIO_CACHE_BUDGET_BYTES,
+        [...getKeepOfflineIds(), mod.id]
+      );
+      if (evicted.removedClips > 0) {
+        console.info(`Evicted ${evicted.removedClips} least-recently-used clip(s) to stay within budget.`);
+      }
+    } catch (err) {
+      console.warn("Eviction pass failed:", err);
+    }
+
+    await refreshCacheStatus(mod);
+
+    setPrecacheResult({ cached, failed, skipped, cancelled: controller.signal.aborted });
+    precacheAbortRef.current = null;
     setIsPrecaching(false);
     setPrecacheProgress(null);
+  };
+
+  /** Stop a pre-cache run and abandon its in-flight request. */
+  const handleCancelPrecache = () => {
+    precacheAbortRef.current?.abort();
   };
 
   /**
@@ -261,16 +527,12 @@ export default function App() {
    * Play single line with synchronized word highlighting (supports loop repetition when isLooping is enabled)
    */
   const handlePlayLine = async (line: DialogueLine) => {
-    stopSequenceRef.current = true;
-    audioPlayer.stop();
-    // Allow brief microtask for previous loop to exit
-    await new Promise((r) => setTimeout(r, 20));
-    stopSequenceRef.current = false;
+    const generation = beginPlaybackSequence();
 
     setPlaybackError(null);
 
     do {
-      if (stopSequenceRef.current) break;
+      if (!isCurrentSequence(generation)) break;
 
       setBufferingLineId(line.id);
       setIsBuffering(true);
@@ -278,7 +540,7 @@ export default function App() {
 
       try {
         const audioBuffer = await fetchLineAudioBuffer(line);
-        if (stopSequenceRef.current) break;
+        if (!isCurrentSequence(generation)) break;
 
         setBufferingLineId(null);
         setIsBuffering(false);
@@ -293,7 +555,7 @@ export default function App() {
               setActiveWordIndex(null);
               resolve();
             },
-            line.words,
+            wordsWithSpokenForm(line),
             (wordIndex) => {
               setActiveWordIndex(wordIndex);
             }
@@ -301,11 +563,13 @@ export default function App() {
         });
 
         // Small pause between line loops
-        if (isLoopingRef.current && !stopSequenceRef.current) {
-          await new Promise((res) => setTimeout(res, 500));
+        if (isLoopingRef.current && isCurrentSequence(generation)) {
+          await new Promise((res) => setTimeout(res, lineRepeatGap(playbackSpeedRef.current)));
         }
       } catch (err: any) {
         console.error(err);
+        // A superseded sequence must not report its error over the new one.
+        if (!isCurrentSequence(generation)) break;
         setBufferingLineId(null);
         setIsBuffering(false);
         setActiveLineId(null);
@@ -314,9 +578,10 @@ export default function App() {
         setPlaybackError(err.message || "Speech synthesis failed");
         break;
       }
-    } while (isLoopingRef.current && !stopSequenceRef.current);
+    } while (isLoopingRef.current && isCurrentSequence(generation));
 
-    if (!isLoopingRef.current || stopSequenceRef.current) {
+    // Only clear shared playback state if no newer sequence has taken over.
+    if (isCurrentSequence(generation)) {
       setActiveLineId(null);
       setActiveWordIndex(null);
       setBufferingLineId(null);
@@ -329,10 +594,7 @@ export default function App() {
    * Play entire dialogue sequentially with live line and word highlighting (supports continuous full module loop)
    */
   const handlePlayFullDialogue = async () => {
-    stopSequenceRef.current = true;
-    audioPlayer.stop();
-    await new Promise((r) => setTimeout(r, 20));
-    stopSequenceRef.current = false;
+    const generation = beginPlaybackSequence();
 
     setIsPlaying(true);
     setPlaybackError(null);
@@ -341,7 +603,7 @@ export default function App() {
 
     do {
       for (let i = 0; i < lines.length; i++) {
-        if (stopSequenceRef.current) break;
+        if (!isCurrentSequence(generation)) break;
 
         const line = lines[i];
         setActiveLineId(line.id);
@@ -351,7 +613,7 @@ export default function App() {
 
         try {
           const audioBuffer = await fetchLineAudioBuffer(line);
-          if (stopSequenceRef.current) break;
+          if (!isCurrentSequence(generation)) break;
 
           setIsBuffering(false);
           setBufferingLineId(null);
@@ -365,43 +627,53 @@ export default function App() {
                 setActiveWordIndex(null);
                 resolve();
               },
-              line.words,
+              wordsWithSpokenForm(line),
               (wordIndex) => {
                 setActiveWordIndex(wordIndex);
               }
             );
           });
 
-          // Pause between dialogue turns
-          if ((i < lines.length - 1 || isLoopingRef.current) && !stopSequenceRef.current) {
-            await new Promise((res) => setTimeout(res, 400));
+          // Pause between dialogue turns, sized from punctuation and speaker
+          // change rather than a fixed interval. See utils/dialogueTiming.
+          if ((i < lines.length - 1 || isLoopingRef.current) && isCurrentSequence(generation)) {
+            const nextLine = lines[i + 1] ?? (isLoopingRef.current ? lines[0] : null);
+            await new Promise((res) =>
+              setTimeout(res, gapAfter(line, nextLine, playbackSpeedRef.current))
+            );
           }
         } catch (err: any) {
           console.error(err);
+          // A superseded sequence must not report its error over the new one.
+          if (!isCurrentSequence(generation)) break;
           setPlaybackError(err.message || "Failed during sequential playback");
-          stopSequenceRef.current = true;
+          playbackGenerationRef.current += 1;
           break;
         }
       }
 
       // Pause between complete module loops
-      if (isLoopingRef.current && !stopSequenceRef.current) {
-        await new Promise((res) => setTimeout(res, 800));
+      if (isLoopingRef.current && isCurrentSequence(generation)) {
+        await new Promise((res) => setTimeout(res, loopRestartGap(playbackSpeedRef.current)));
       }
-    } while (isLoopingRef.current && !stopSequenceRef.current);
+    } while (isLoopingRef.current && isCurrentSequence(generation));
 
-    setActiveLineId(null);
-    setActiveWordIndex(null);
-    setBufferingLineId(null);
-    setIsBuffering(false);
-    setIsPlaying(false);
+    // Only clear shared playback state if no newer sequence has taken over.
+    if (isCurrentSequence(generation)) {
+      setActiveLineId(null);
+      setActiveWordIndex(null);
+      setBufferingLineId(null);
+      setIsBuffering(false);
+      setIsPlaying(false);
+    }
   };
 
   /**
    * Stop any running playback
    */
   const handleStopPlayback = () => {
-    stopSequenceRef.current = true;
+    // Claim a generation nobody is running: every live sequence is invalidated.
+    playbackGenerationRef.current += 1;
     audioPlayer.stop();
     setActiveLineId(null);
     setActiveWordIndex(null);
@@ -414,6 +686,23 @@ export default function App() {
    * Pronounce a single word in the modal
    */
   const handlePlayWordTTS = async (wordText: string) => {
+    // This had no error handling: an offline click rejected unhandled and the
+    // modal's spinner simply stopped with no explanation. Route failures into
+    // the same playbackError channel everything else uses.
+    try {
+      await synthesizeAndPlayWord(wordText);
+    } catch (err: any) {
+      console.error(err);
+      setPlaybackError(
+        isOnline
+          ? err?.message || "Word pronunciation failed"
+          : "You are offline. Words that have not been synthesized before need a connection."
+      );
+      throw err;
+    }
+  };
+
+  const synthesizeAndPlayWord = async (wordText: string) => {
     const res = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -459,6 +748,7 @@ export default function App() {
     audioPlayer.playBuffer(buffer, playbackSpeed);
   };
 
+
   const handleOpenWordModal = (word: WordGloss, line: DialogueLine) => {
     setSelectedWord(word);
     setSelectedWordLine(line);
@@ -468,14 +758,76 @@ export default function App() {
     <div className="min-h-screen bg-[#F7F5F0] text-[#2D2A26] font-serif selection:bg-[#2D2A26] selection:text-[#F7F5F0] flex flex-col">
       
       {/* Top Header with Module Title */}
-      <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+
+      <SettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={speechSettings}
+        onSettingsChange={handleSettingsChange}
         currentModule={currentModule}
+        modules={[...BUILTIN_MODULES, ...customModules]}
+        speakerVoices={speakerVoices}
+        onSetSpeakerVoice={handleSetSpeakerVoice}
+        onStorageChanged={() => refreshCacheStatus(currentModule)}
+        onExportModule={() => handleExportCurrentModule(currentModule)}
+        onExportLibrary={handleExportFullLibrary}
+        busy={isPlaying || isPrecaching}
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
+      <div className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)] items-start">
+
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          currentModule={currentModule}
+          onOpenSettings={() => setSettingsOpen(true)}
+          moduleActions={
+            <ModuleSelector
+              compact
+              currentModule={currentModule}
+              customModules={customModules}
+              onSelectModule={handleSelectModule}
+              onOpenImporter={() => setActiveTab("importer")}
+              onCustomModulesChange={handleCustomModulesChange}
+            />
+          }
+          readingControls={
+            activeTab === "dialogue" || activeTab === "book" ? (
+              <ControlRail
+                isPlaying={isPlaying}
+                isBuffering={isBuffering}
+                onPlayFullDialogue={handlePlayFullDialogue}
+                onStopPlayback={handleStopPlayback}
+                lineCount={currentModule.lines.length}
+                playbackSpeed={playbackSpeed}
+                setPlaybackSpeed={setPlaybackSpeed}
+                isLooping={isLooping}
+                onToggleLoop={handleToggleLoop}
+                layout={activeTab === "book" ? "book" : dialogueLayoutView}
+                setLayout={(l) => {
+                  if (activeTab === "book") setActiveTab("dialogue");
+                  handleSetLayout(l);
+                }}
+                displayMode={displayMode}
+                setDisplayMode={setDisplayMode}
+                bookLayout={bookLayout}
+                setBookLayout={setBookLayout}
+                fontSize={bookFontSize}
+                setFontSize={setBookFontSize}
+                showTransliteration={showTransliteration}
+                setShowTransliteration={setShowTransliteration}
+                cachedLineCount={cachedLineIds.size}
+                isPrecaching={isPrecaching}
+                precacheProgress={precacheProgress}
+                onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
+                onCancelPrecache={handleCancelPrecache}
+              />
+            ) : undefined
+          }
+        />
+
+        <main className="min-w-0 space-y-6 pb-20 lg:pb-0">
         
         {playbackError && (
           <div className="p-4 border-2 border-red-500 bg-[#FFFFFF] text-red-800 text-xs font-sans flex items-center justify-between">
@@ -489,107 +841,29 @@ export default function App() {
           </div>
         )}
 
-        {/* Global Module Library Selector (on dialogue and book tabs) */}
-        {(activeTab === "dialogue" || activeTab === "book" || activeTab === "roleplay") && (
-          <ModuleSelector
-            currentModule={currentModule}
-            customModules={customModules}
-            onSelectModule={handleSelectModule}
-            onOpenImporter={() => setActiveTab("importer")}
-            onCustomModulesChange={handleCustomModulesChange}
-            onExportModule={handleExportCurrentModule}
-            onExportLibrary={handleExportFullLibrary}
-          />
-        )}
 
-        {/* Global Toolbar & Audio Controls (on dialogue tab cards view) */}
-        {activeTab === "dialogue" && dialogueLayoutView === "cards" && (
-          <AudioControls
-            isPlaying={isPlaying}
-            isBuffering={isBuffering}
-            activeLineId={activeLineId}
-            playbackSpeed={playbackSpeed}
-            setPlaybackSpeed={setPlaybackSpeed}
-            isLooping={isLooping}
-            onToggleLoop={handleToggleLoop}
-            currentModule={currentModule}
-            speakerVoices={speakerVoices}
-            onSetSpeakerVoice={handleSetSpeakerVoice}
-            displayMode={displayMode}
-            setDisplayMode={setDisplayMode}
-            onPlayFullDialogue={handlePlayFullDialogue}
-            onStopPlayback={handleStopPlayback}
-            cachedLineCount={cachedLineIds.size}
-            totalLineCount={currentModule.lines.length}
-            isPrecaching={isPrecaching}
-            precacheProgress={precacheProgress}
-            onPrecacheAudio={() => handlePrecacheAudio(currentModule)}
-            onExportModule={() => handleExportCurrentModule(currentModule)}
-          />
-        )}
 
-        {/* Tab 1: Interactive Dialogue View */}
+        {/* Tab 1: Interactive Dialogue View.
+            Two columns on wide screens: the reading column keeps a comfortable
+            measure while the controls occupy space that was empty. Below lg the
+            rail collapses to a button that raises a sheet. */}
         {activeTab === "dialogue" && (
           <div className="space-y-6">
             
-            {/* View switcher banner */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-[#FFFFFF] border-2 border-[#2D2A26]">
-              <div>
-                <span className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em]">
-                  Dialogue Format View
-                </span>
-                <p className="text-xs font-serif text-[#2D2A26] mt-0.5">
-                  Toggle between granular card-by-card grammatical analysis and immersive unified book edition.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-1.5 border border-[#2D2A26] p-1 bg-[#F7F5F0]">
-                <button
-                  id="switch-view-cards"
-                  onClick={() => setDialogueLayoutView("cards")}
-                  className={`flex items-center gap-1.5 px-3 py-1 text-[10px] uppercase font-sans font-bold tracking-wider transition-all cursor-pointer ${
-                    dialogueLayoutView === "cards"
-                      ? "bg-[#2D2A26] text-[#F7F5F0]"
-                      : "text-[#5C564E] hover:text-[#2D2A26]"
-                  }`}
-                >
-                  <Layers className="w-3 h-3" />
-                  <span>Analytical Cards</span>
-                </button>
-
-                <button
-                  id="switch-view-book"
-                  onClick={() => setDialogueLayoutView("book")}
-                  className={`flex items-center gap-1.5 px-3 py-1 text-[10px] uppercase font-sans font-bold tracking-wider transition-all cursor-pointer ${
-                    dialogueLayoutView === "book"
-                      ? "bg-[#2D2A26] text-[#F7F5F0]"
-                      : "text-[#5C564E] hover:text-[#2D2A26]"
-                  }`}
-                >
-                  <BookOpen className="w-3 h-3" />
-                  <span>Unified Book Format</span>
-                </button>
-              </div>
-            </div>
-
             {dialogueLayoutView === "cards" ? (
               <div className="space-y-4">
-                {/* Context Card */}
-                <div className="bg-[#2D2A26] text-[#F7F5F0] border-2 border-[#2D2A26] p-6 shadow-none flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div>
-                    <span className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.3em] block mb-1">
-                      {currentModule.author || "Classical Text"} • {currentModule.stephanusRef || currentModule.genre.toUpperCase()}
-                    </span>
-                    <h2 className="text-2xl font-serif font-normal text-[#F7F5F0]">
-                      {currentModule.title}
-                    </h2>
-                    <p className="text-xs text-[#E5E1D8] font-sans mt-1.5 max-w-2xl leading-relaxed">
-                      {currentModule.description} Recited via <strong>Gemini Flash TTS</strong> with live real-time follow-along word highlighting.
-                    </p>
-                  </div>
-                  <div className="shrink-0 flex items-center gap-2 text-[10px] uppercase font-mono font-bold text-[#F7F5F0] border border-[#8B7355] px-3 py-1.5 bg-[#2D2A26]">
-                    <span>{currentModule.lines.length} Lines • {currentModule.difficulty}</span>
-                  </div>
+                {/* Cards has no frontispiece of its own, so it carries a slim
+                    title. The book view prints one on its folio page. */}
+                <div className="pb-1">
+                  <span className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em] block mb-1">
+                    {currentModule.author || "Classical Text"} · {currentModule.stephanusRef || currentModule.genre.toUpperCase()}
+                  </span>
+                  <h1 className="text-xl sm:text-2xl font-serif text-[#2D2A26] leading-tight">
+                    {currentModule.title}
+                  </h1>
+                  <p className="text-xs font-sans text-[#5C564E] mt-0.5">
+                    {currentModule.titleEn} · {currentModule.lines.length} lines · {currentModule.difficulty}
+                  </p>
                 </div>
 
                 {/* List of Dialogue Lines */}
@@ -624,6 +898,9 @@ export default function App() {
                 onPlayFullDialogue={handlePlayFullDialogue}
                 onStopPlayback={handleStopPlayback}
                 onSelectWord={handleOpenWordModal}
+                layoutMode={bookLayout}
+                fontSize={bookFontSize}
+                showTransliteration={showTransliteration}
               />
             )}
 
@@ -633,19 +910,22 @@ export default function App() {
         {/* Tab: Standalone Book Edition */}
         {activeTab === "book" && (
           <BookFormatView
-            module={currentModule}
-            isPlaying={isPlaying}
-            isBuffering={isBuffering}
-            activeLineId={activeLineId}
-            activeWordIndex={activeWordIndex}
-            playbackSpeed={playbackSpeed}
-            setPlaybackSpeed={setPlaybackSpeed}
-            isLooping={isLooping}
-            onToggleLoop={handleToggleLoop}
-            onPlayLine={handlePlayLine}
-            onPlayFullDialogue={handlePlayFullDialogue}
-            onStopPlayback={handleStopPlayback}
-            onSelectWord={handleOpenWordModal}
+                module={currentModule}
+                isPlaying={isPlaying}
+                isBuffering={isBuffering}
+                activeLineId={activeLineId}
+                activeWordIndex={activeWordIndex}
+                playbackSpeed={playbackSpeed}
+                setPlaybackSpeed={setPlaybackSpeed}
+                isLooping={isLooping}
+                onToggleLoop={handleToggleLoop}
+                onPlayLine={handlePlayLine}
+                onPlayFullDialogue={handlePlayFullDialogue}
+                onStopPlayback={handleStopPlayback}
+                onSelectWord={handleOpenWordModal}
+                layoutMode={bookLayout}
+                fontSize={bookFontSize}
+                showTransliteration={showTransliteration}
           />
         )}
 
@@ -678,7 +958,8 @@ export default function App() {
           <LinguisticNotes currentModule={currentModule} />
         )}
 
-      </main>
+        </main>
+      </div>
 
       {/* Word Morphology & Lexicon Modal */}
       <WordGlossModal

@@ -12,6 +12,12 @@ interface ModuleSelectorProps {
   onCustomModulesChange: () => void;
   onExportModule?: (mod: AncientGreekModule) => void;
   onExportLibrary?: () => void;
+  /**
+   * Compact renders only the Library and Import buttons, for the header row.
+   * The module title now lives in the header itself, so the full card would
+   * repeat it — which is what it used to do.
+   */
+  compact?: boolean;
 }
 
 export const ModuleSelector: React.FC<ModuleSelectorProps> = ({
@@ -22,6 +28,7 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = ({
   onCustomModulesChange,
   onExportModule,
   onExportLibrary,
+  compact = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const allModules = [...BUILTIN_MODULES, ...customModules];
@@ -52,11 +59,18 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = ({
   return (
     <div className="relative">
       
-      {/* Selector Bar Header */}
-      <div className="bg-[#FFFFFF] border-2 border-[#2D2A26] p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* Selector Bar Header. Hidden in compact mode: the module identity is
+          shown by the page header, and repeating it was 106px of duplication. */}
+      <div
+        className={
+          compact
+            ? "flex items-center gap-1.5"
+            : "bg-[#FFFFFF] border-2 border-[#2D2A26] p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+        }
+      >
         
         {/* Current Active Module Overview */}
-        <div className="flex-1 min-w-0">
+        <div className={`flex-1 min-w-0 ${compact ? "hidden" : ""}`}>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em] flex items-center gap-1.5">
               {getGenreIcon(currentModule.genre)}
@@ -85,6 +99,7 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = ({
             <span>Library ({allModules.length})</span>
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`} />
           </button>
+        {!compact && (
 
           <button
             id="btn-open-importer"
@@ -94,6 +109,7 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = ({
             <Sparkles className="w-3.5 h-3.5" />
             <span>Import / AI</span>
           </button>
+        )}
         </div>
 
       </div>

@@ -1,6 +1,7 @@
 /**
- * Audio Player utility supporting Web Audio API for Gemini TTS 24kHz PCM and WAV audio
- * with real-time syllable-weighted word highlighting synchronization.
+ * Audio Player utility supporting Web Audio API for Gemini TTS 24kHz PCM and WAV audio,
+ * with estimated word highlighting. See calculateWordTimings for why the
+ * highlight is an approximation rather than true synchronization.
  */
 
 export interface WordTiming {
@@ -10,24 +11,75 @@ export interface WordTiming {
   endTime: number;
 }
 
-export function calculateWordTimings(words: { greek: string }[], totalDuration: number): WordTiming[] {
+/**
+ * Vowels across every notation we emit: Greek (Modern), Latin respelling
+ * (Erasmian) and IPA (Reconstructed). A string only ever contains one of
+ * these alphabets, so there is no double counting.
+ */
+const VOWEL_PATTERN =
+  /[aeiouy]|[αειηουωάέήίόύώὰὲὴὶὸὺὼᾶῆῖῦῶ]|[ɛɔɑæøœʌəɨʉɯ]/gi;
+
+/** Stress marks: positional, no duration of their own. */
+const STRESS_MARKS = /[ˈˌ]/g;
+/** Length mark: a long vowel takes roughly twice the time of a short one. */
+const LENGTH_MARK = /ː/g;
+/** Non-syllabic mark: the second element of a diphthong, shorter than a vowel. */
+const NONSYLLABIC = /\u032F/g;
+/** Aspiration: real but brief. */
+const ASPIRATION = /ʰ/g;
+
+/**
+ * Relative duration of one spoken token.
+ *
+ * IMPORTANT — this must reduce exactly to the previous Greek-only formula when
+ * given Greek text, because that is what Modern pronunciation sends and its
+ * highlighting was correct. Greek in NFC contains no stress, length,
+ * non-syllabic or aspiration marks, so every term added for the other
+ * notations evaluates to zero and the result is `length + 0.8·vowels`
+ * (+3.5 for punctuation) as before.
+ */
+export function spokenWeight(text: string): number {
+  const raw = text.trim();
+  const core = raw.replace(STRESS_MARKS, "");
+
+  const longMarks = (core.match(LENGTH_MARK) || []).length;
+  const glides = (core.match(NONSYLLABIC) || []).length;
+
+  // Modifier symbols carry duration through their own terms, not through length.
+  const base = Math.max(
+    core.replace(LENGTH_MARK, "").replace(NONSYLLABIC, "").replace(ASPIRATION, "").length,
+    2
+  );
+  const vowels = (core.match(VOWEL_PATTERN) || []).length;
+
+  let weight = base + vowels * 0.8 + longMarks * 1.5 - glides * 0.4;
+  if (/[;.,·:!?]/.test(raw)) weight += 3.5;
+  return Math.max(weight, 1);
+}
+
+/**
+ * ESTIMATE word boundaries by distributing the clip's duration across words.
+ *
+ * Weighted from the string the engine actually READ, not from the Greek source.
+ * Those differ in two of the three pronunciation schemes, and the difference is
+ * exactly what changes relative durations: η→"eh" and ω→"oh" add characters
+ * without adding syllables, while IPA writes vowel length as "ː" — a single
+ * character denoting roughly double the time. Weighting from the Greek made the
+ * highlighting correct in Modern and systematically wrong in the other two.
+ *
+ * Still an estimate: nothing here is derived from the audio, so error
+ * accumulates left to right. Real synchronisation needs word-level timestamps
+ * the speech endpoint does not return. See docs/FIX-PLAN.md P1-4.
+ */
+export function calculateWordTimings(
+  words: { greek: string; spoken?: string }[],
+  totalDuration: number
+): WordTiming[] {
   if (!words.length) return [];
 
-  // Calculate weights based on character length, vowels/diphthongs, and punctuation pauses
-  const weights = words.map((w) => {
-    const raw = w.greek.trim();
-    let weight = Math.max(raw.length, 2);
-    
-    // Add extra pause duration for punctuation marks (; . , · :)
-    if (/[;.,·:!?]/.test(raw)) {
-      weight += 3.5;
-    }
-    // Boost longer polysyllabic words
-    const vowelCount = (raw.match(/[αειηουωάέήίόύώὰὲὴὶὸὺὼᾶῆῖῦῶ]/gi) || []).length;
-    weight += vowelCount * 0.8;
-
-    return weight;
-  });
+  // Fall back to the Greek when no spoken form is supplied, so a caller that
+  // predates this behaves exactly as before.
+  const weights = words.map((w) => spokenWeight(w.spoken ?? w.greek));
 
   const totalWeight = weights.reduce((sum, w) => sum + w, 0) || 1;
   let currentStart = 0;
@@ -48,7 +100,17 @@ export function calculateWordTimings(words: { greek: string }[], totalDuration: 
 class AudioPlayerEngine {
   private ctx: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
+  /**
+   * Decoded-buffer cache, bounded.
+   *
+   * Decoded 24kHz mono PCM costs roughly 96KB per audio-second, so an
+   * unbounded map held tens of megabytes of decoded audio for the lifetime of
+   * the page - on top of the base64 copies already in IndexedDB. IndexedDB is
+   * the durable cache; this only spares a repeat decode, so a small LRU is
+   * enough.
+   */
   private audioCache: Map<string, AudioBuffer> = new Map();
+  private static readonly MAX_DECODED_BUFFERS = 24;
   private isCurrentlyPlaying = false;
   private onEndCallbacks: Set<() => void> = new Set();
   private animationFrameId: number | null = null;
@@ -73,8 +135,13 @@ class AudioPlayerEngine {
    */
   public async decodeAudio(base64Data: string, mimeType = "audio/pcm;rate=24000"): Promise<AudioBuffer> {
     const cacheKey = `${base64Data.slice(0, 48)}_${base64Data.length}`;
-    if (this.audioCache.has(cacheKey)) {
-      return this.audioCache.get(cacheKey)!;
+    const hit = this.audioCache.get(cacheKey);
+    if (hit) {
+      // Re-insert to mark as most recently used: Map preserves insertion order,
+      // so the oldest key is always the first one.
+      this.audioCache.delete(cacheKey);
+      this.audioCache.set(cacheKey, hit);
+      return hit;
     }
 
     const binaryString = atob(base64Data);
@@ -93,8 +160,7 @@ class AudioPlayerEngine {
     if (isWav) {
       try {
         const decoded = await ctx.decodeAudioData(bytes.buffer.slice(0));
-        this.audioCache.set(cacheKey, decoded);
-        return decoded;
+        return this.remember(cacheKey, decoded);
       } catch (err) {
         console.warn("WAV decode failed, falling back to PCM parsing:", err);
       }
@@ -116,8 +182,18 @@ class AudioPlayerEngine {
       channelData[i] = intSample / 32768.0;
     }
 
-    this.audioCache.set(cacheKey, audioBuffer);
-    return audioBuffer;
+    return this.remember(cacheKey, audioBuffer);
+  }
+
+  /** Insert into the decoded-buffer cache, evicting the least recently used. */
+  private remember(key: string, buffer: AudioBuffer): AudioBuffer {
+    this.audioCache.set(key, buffer);
+    while (this.audioCache.size > AudioPlayerEngine.MAX_DECODED_BUFFERS) {
+      const oldest = this.audioCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.audioCache.delete(oldest);
+    }
+    return buffer;
   }
 
   /**
@@ -127,7 +203,7 @@ class AudioPlayerEngine {
     buffer: AudioBuffer,
     speed = 1.0,
     onEnded?: () => void,
-    words?: { greek: string }[],
+    words?: { greek: string; spoken?: string }[],
     onWordChange?: (wordIndex: number, progress: number) => void
   ): void {
     this.stop();

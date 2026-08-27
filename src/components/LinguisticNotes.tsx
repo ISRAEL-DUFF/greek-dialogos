@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { explanationCache } from "../utils/explanationCache";
+import { useOnlineStatus } from "../utils/useOnlineStatus";
 import { AncientGreekModule, SyntaxPoint, PhilologicalNote } from "../types";
 import { 
   BookOpen, 
@@ -29,6 +31,8 @@ export const LinguisticNotes: React.FC<LinguisticNotesProps> = ({ currentModule 
   const [inquiryText, setInquiryText] = useState("");
   const [inquiryResponse, setInquiryResponse] = useState<string | null>(null);
   const [isLoadingInquiry, setIsLoadingInquiry] = useState(false);
+  const [answerFromCache, setAnswerFromCache] = useState(false);
+  const isOnline = useOnlineStatus();
 
   const commentary = currentModule.commentary;
   const historical = commentary?.historicalContext;
@@ -42,6 +46,27 @@ export const LinguisticNotes: React.FC<LinguisticNotesProps> = ({ currentModule 
 
     setIsLoadingInquiry(true);
     setInquiryResponse(null);
+    setAnswerFromCache(false);
+
+    const question = inquiryText.trim();
+
+    // A previously-asked question is answerable offline, and re-asking it
+    // online should not be billed twice.
+    const cached = await explanationCache.get(currentModule.id, question);
+    if (cached) {
+      setInquiryResponse(cached.answer);
+      setAnswerFromCache(true);
+      setIsLoadingInquiry(false);
+      return;
+    }
+
+    if (!isOnline) {
+      setInquiryResponse(
+        "You are offline, and this question has not been asked before. Previously-asked questions remain available; new ones need a connection."
+      );
+      setIsLoadingInquiry(false);
+      return;
+    }
 
     try {
       const res = await fetch("/api/gemini/explain", {
@@ -58,6 +83,7 @@ export const LinguisticNotes: React.FC<LinguisticNotesProps> = ({ currentModule 
 
       const data = await res.json();
       setInquiryResponse(data.text);
+      await explanationCache.save(currentModule.id, question, data.text, data.provider || "unknown");
     } catch (err: any) {
       setInquiryResponse(`Error: ${err?.message || "Could not retrieve philological response."}`);
     } finally {
@@ -470,6 +496,11 @@ export const LinguisticNotes: React.FC<LinguisticNotesProps> = ({ currentModule 
               <button
                 type="submit"
                 disabled={isLoadingInquiry || !inquiryText.trim()}
+                title={
+                  isOnline
+                    ? "Ask the philologist about this passage"
+                    : "Offline: previously-asked questions are still answered from your saved copies, new ones need a connection"
+                }
                 className="flex items-center gap-1.5 px-4 py-2 bg-[#2D2A26] text-[#F7F5F0] text-xs font-sans font-bold uppercase tracking-wider hover:bg-[#8B7355] transition-all cursor-pointer disabled:opacity-50"
               >
                 {isLoadingInquiry ? (
@@ -492,6 +523,12 @@ export const LinguisticNotes: React.FC<LinguisticNotesProps> = ({ currentModule 
                 <div className="flex items-center justify-between border-b border-[#E5E1D8] pb-1.5">
                   <span className="text-[10px] font-mono font-bold uppercase text-[#8B7355]">
                     Gemini Philological Analysis
+                    {/* Marked so a stored answer is never mistaken for a fresh one. */}
+                    {answerFromCache && (
+                      <span className="ml-2 text-[#5C564E] font-normal normal-case">
+                        · saved answer
+                      </span>
+                    )}
                   </span>
                   <span className="text-[10px] font-mono text-[#5C564E]">
                     Ref: {currentModule.title}
