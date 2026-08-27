@@ -1097,6 +1097,43 @@ Two caveats on the ground truth: durations were measured on **isolated** words, 
 
 ---
 
+## Reported: generated audio "does not save" (2026-08-27)
+
+**It does.** Measured on a running build, audio survives a reload and replays with **zero** TTS requests, for a built-in module and for a custom module alike. A synthetic custom module's records also survive the mount-time `pruneOrphans` pass, so that is not the cause either.
+
+### What is actually wrong: the indicator counts audio playback will not use
+
+`getModuleAudioMap` gathers records by **`moduleId` only**, keyed by `lineId`, discarding voice and variant:
+
+```ts
+const index = store.index("moduleId");
+...
+audioMap[rec.lineId] = { ... };   // any voice, any variant
+```
+
+Playback looks up the exact key, `moduleId__line_N__voice_V__v_VARIANT`. So a line cached under one voice or one settings combination is counted as cached under every other — and then regenerates on play.
+
+Reproduced deliberately: with line 1 cached, switching pronunciation from Erasmian to Reconstructed left the indicator reading **1/8 lines** while playback issued a fresh TTS request. Both records now exist, `…__v_efn` and `…__v_rfn`.
+
+```
+socrates-alexander-agora__line_1__voice_Fenrir__v_efn
+socrates-alexander-agora__line_1__voice_Fenrir__v_rfn
+```
+
+### Why it looked like a save failure
+
+Anything cached before the variant scheme existed has no `__v_` suffix at all — five such records were still present at the start of this investigation. Every one of them is counted by the indicator and missed by playback, so a module that reports as downloaded regenerates line by line. From the outside that is indistinguishable from audio never having been saved.
+
+The behaviour is correct in the sense that different settings genuinely need different audio. **The defect is the count**, which promises something the lookup will not honour.
+
+### Not yet fixed
+
+`getCachedLineIds` already accepts `speakerVoices` and `moduleSpeakers` parameters **and ignores both** — the signature anticipated this and the body never used it. The fix is to have it compute the same key playback does and count only exact matches, which also makes "Download all" offer to fetch precisely what is missing under the current settings.
+
+Left for a separate change: it alters what the indicator reports for every existing user, and pre-variant records should probably be swept at the same time rather than lingering as permanently uncounted weight.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
