@@ -830,6 +830,33 @@ These are competing scholarly traditions, not display preferences, and the ranki
 
 ---
 
+## Three schemes, each coherent (2026-08-27)
+
+The settings offered Modern / Erasmian / Reconstructed, but the Erasmian option was not purely Erasmian and the prompts made two options claim the same ground.
+
+### The label was hiding a real hybrid
+
+The prompt read **"Reconstructed Attic/Erasmian"** — a hedge from when there was one scheme. With all three selectable it was contradictory: the Erasmian setting named Reconstructed too.
+
+But the label was not merely sloppy. **ζ → `zd` is a reconstruction, not an Erasmian convention** — Erasmian teaching gives [z] or [dz], while [zd] is the scholarly Attic value. One reconstructed mapping was sitting inside an otherwise Erasmian scheme, which is exactly what the slash was papering over.
+
+**Erasmian now emits `z`.** Readers who want [zd] select Reconstructed, where the IPA path already supplies it. Every other mapping in the scheme was already Erasmian — θ φ χ as `th ph kh` read as the fricatives Erasmian teaching uses, υ as `u`, ει as a diphthong.
+
+```
+              ζωή          Χαῖρε, ὦ φίλε! Ποῖ βαδίζεις;
+Modern        (untranscribed)  Χαῖρε, ὦ φίλε! Ποῖ βαδίζεις;
+Erasmian      zoheh            Khaire, oh phile! Poi badizeis;
+Reconstructed zdɔːˈɛː          ˈkʰai̯re, ˈɔː ˈpʰile! ˈpoi̯ baˈdizdeːs;
+```
+
+### Prompts name only their own scheme, and carry no delivery adverbs
+
+The Modern branch had asked the model to read "naturally and fluently" while the others asked for authenticity. That is a difference in **what is requested**, not in the notation, and it made the schemes incomparable — a 2×2 showed the fluency wording alone shortened a line by about 17%, independent of notation. All three now differ only where the notation forces them to.
+
+That test also settled why transcription sounds slower: under a common prompt, Latin transcription takes **~34% longer** than Greek. Unfamiliar tokens are read in citation form, and the model cannot be talked out of it — the fluency wording sped up Greek and did nothing for Latin. Slowness and the original word-by-word complaint are one phenomenon, not two.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

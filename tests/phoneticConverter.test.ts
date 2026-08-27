@@ -35,9 +35,15 @@ describe("aspirated stops", () => {
   test("all three in one word", () => check("φθόγγος", "phthongos"));
 });
 
-describe("ζ becomes the zd cluster", () => {
-  test("initial", () => check("ζωή", "zdoheh"));
-  test("medial", () => check("βαδίζεις", "badizdeis"));
+describe("ζ is the Erasmian [z], not the reconstructed [zd]", () => {
+  // [zd] is the Attic reconstruction. Keeping it here made this scheme a
+  // hybrid — the reason the old label read "Reconstructed Attic/Erasmian".
+  // Readers wanting [zd] choose Reconstructed, where the IPA path supplies it.
+  test("initial", () => check("ζωή", "zoheh"));
+  test("medial", () => check("βαδίζεις", "badizeis"));
+  test("stays distinct from σ", () => {
+    assert.notEqual(convert("ζωή"), convert("σοφός"));
+  });
 });
 
 describe("long vowels are marked", () => {
@@ -98,11 +104,11 @@ describe("passthrough", () => {
 
 describe("sentence level", () => {
   test("the opening line of the default module", () =>
-    check("Χαῖρε, ὦ φίλε! Ποῖ βαδίζεις;", "Khaire, oh phile! Poi badizdeis;"));
+    check("Χαῖρε, ὦ φίλε! Ποῖ βαδίζεις;", "Khaire, oh phile! Poi badizeis;"));
   test("punctuation and spacing are structurally preserved", () =>
     check(
       "Χαῖρε, ὦ Σώκρατες! Εἰς τὴν ἀγοράν βαδίζω.",
-      "Khaire, oh Sohkrates! Eis tehn agoran badizdoh."
+      "Khaire, oh Sohkrates! Eis tehn agoran badizoh."
     ));
 });
 

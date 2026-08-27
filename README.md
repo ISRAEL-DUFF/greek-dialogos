@@ -257,7 +257,7 @@ Polytonic Greek is transcribed to Latin characters *before* synthesis, so the TT
 | **θ** | `th` | θεός → `theos` | Voiceless aspirated dental stop [tʰ], as in *tin*, not English *thin* |
 | **φ** | `ph` | φίλε → `phile` | Voiceless aspirated labial stop [pʰ], as in *pin*, not English *fin* |
 | **χ** | `kh` | χάρις → `kharis` | Voiceless aspirated velar stop [kʰ], as in *kin*, not Scottish *loch* |
-| **ζ** | `zd` | ζωή → `zdoheh` | Voiced alveolar fricative + stop cluster |
+| **ζ** | `z` | ζωή → `zoheh` | Erasmian classroom value. The Attic [zd] cluster is a *reconstruction*, available under the Reconstructed setting |
 | **η** | `eh` | ἡμέρα → `hehmera` | Long open-mid front vowel, distinguished from ε |
 | **ω** | `oh` | ἄνθρωπος → `anthrohpos` | Long open-mid back vowel, distinguished from ο |
 | **αι** | `ai` | Ἀθῆναι → `Athehnai` | True diphthong [ai] |

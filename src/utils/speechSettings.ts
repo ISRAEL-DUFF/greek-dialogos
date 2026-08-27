@@ -52,13 +52,13 @@ export const SCHEME_INFO: Record<
     summary:
       "The classroom pronunciation used in most English-speaking universities since the 16th century.",
     tradeoff:
-      "Keeps every vowel distinct, so the grammar stays audible. Not historically authentic — it is a teaching convention, not a reconstruction.",
-    sample: "Khaire, oh phile! Poi badizdeis;",
+      "Keeps every vowel distinct, so the grammar stays audible. Not historically authentic — it is a teaching convention from the 16th century, not a reconstruction.",
+    sample: "Khaire, oh phile! Poi badizeis;",
   },
   reconstructed: {
     label: "Reconstructed Attic",
     summary:
-      "Scholarly reconstruction of 5th-century Athenian, written in phonetic notation.",
+      "Scholarly reconstruction of 5th-century Athenian speech, written in phonetic notation.",
     tradeoff:
       "The most accurate: aspirated θ φ χ stay distinct from τ π κ, vowel length is marked, υ is a rounded vowel, and the iota subscript is audible. The engine handles phonetic symbols less smoothly than letters, so it can sound more deliberate.",
     sample: "ˈkʰai̯re, ˈɔː ˈpʰile! ˈpoi̯ baˈdizdeːs;",

@@ -212,7 +212,12 @@ function convertSingleGreekWord(word: string, options: PhoneticOptions = {}): st
     } else if (lowerCh === "δ") {
       result += isCapital ? "D" : "d";
     } else if (lowerCh === "ζ") {
-      result += isCapital ? "Zd" : "zd"; // Archaic double-consonant cluster
+      // [z], the Erasmian classroom value. The Attic [zd] cluster is a
+      // *reconstruction*, not an Erasmian convention, and it was the one
+      // mapping here that belonged to the other tradition — which is why the
+      // scheme used to be labelled "Reconstructed Attic/Erasmian".
+      // Readers who want [zd] select Reconstructed, where the IPA path gives it.
+      result += isCapital ? "Z" : "z";
     } else if (lowerCh === "θ") {
       result += isCapital ? "Th" : "th";
     } else if (lowerCh === "φ") {

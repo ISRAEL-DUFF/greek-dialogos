@@ -256,11 +256,20 @@ function buildSpokenPrompt({
 }): string {
   // IPA needs a different instruction: the model must be told these are
   // phonetic symbols to realise, not letters to read.
+  // Each scheme names only itself. The label "Reconstructed Attic/Erasmian"
+  // dates from when there was a single scheme; with all three selectable it
+  // made two options claim the same ground.
+  //
+  // The instructions deliberately carry NO delivery adverbs. An earlier
+  // version asked Modern to read "naturally and fluently" while the others
+  // were asked for authenticity, which is a difference in what is requested
+  // rather than in the notation — it made the schemes incomparable, and
+  // measurably so: the fluency wording alone shortened a line by ~17%.
   const pronunciation = modern
-    ? "Read this Greek aloud naturally and fluently, using Modern Greek pronunciation"
+    ? "Read this Greek aloud with Modern Greek pronunciation"
     : ipa
-      ? "The following is an IPA phonetic transcription of Ancient Greek. Pronounce it exactly as the symbols specify, realising every symbol precisely"
-      : "Speak with authentic Reconstructed Attic/Erasmian Ancient Greek pronunciation";
+      ? "The following is an IPA phonetic transcription of Ancient Greek. Read it aloud, realising every symbol exactly as specified"
+      : "Read this aloud with Erasmian pronunciation of Ancient Greek, as taught in universities";
 
   if (!context) {
     return emotion
