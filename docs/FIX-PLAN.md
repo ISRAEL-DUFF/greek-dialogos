@@ -945,6 +945,30 @@ after rail             192                 0.21
 
 ---
 
+## Book view rendered nothing — and why nothing caught it (2026-08-27)
+
+**Symptom:** switching Format to Book showed the page furniture but no dialogue lines. Main text dropped from 3367 to 859 characters.
+
+**Cause:** when lifting `layoutMode` / `fontSize` / `showTransliteration` out of `BookFormatView`, the edit anchored on `onSelectWord={handleOpenWordModal}` — which occurs in **`DialogueCard` first**. The three props landed on the card, and `BookFormatView` received no `layoutMode`. It is `undefined`, so none of the three `layoutMode === …` branches matched and every line was skipped.
+
+### The real finding: JSX has never been type-checked in this project
+
+That should have been two compile errors — a component receiving three undeclared props, and another missing three required ones. `tsc --noEmit` exited **0**.
+
+**`@types/react` was never in `devDependencies`.** Without it, JSX resolves to `any`, so **no component props in this codebase have ever been checked**. A canary confirmed the shape of the blindness precisely: a plain `const x: number = "str"` in `App.tsx` errors as expected, while `<DialogueCard totallyBogusProp={123} />` passes silently. `tsc` was reading the file; it just could not see across the JSX boundary.
+
+This is the project's only static check — `npm run lint` is `tsc --noEmit` — and every component boundary was outside it.
+
+**Fixed:** `@types/react` and `@types/react-dom` added. The codebase is clean under real checking (**0 errors**), and the canary now correctly rejects both an unknown prop and missing required ones.
+
+**Verified in the browser:** all three book layouts render distinct content — Bilingual 2456, Folio 2145, Codex 2058 characters — with the Greek lines present in each.
+
+### Worth noting about the verification itself
+
+`innerText` reported the codex header absent while `innerHTML` showed it present. Two checks in this session have now disagreed with reality in the same direction — this one, and the tab-reachability check that queried the DOM before React re-rendered. A green check deserves the same scepticism as a red one.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

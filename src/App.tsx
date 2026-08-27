@@ -797,9 +797,6 @@ export default function App() {
                       displayMode={displayMode}
                       onPlayLine={handlePlayLine}
                       onSelectWord={handleOpenWordModal}
-                layoutMode={bookLayout}
-                fontSize={bookFontSize}
-                showTransliteration={showTransliteration}
                     />
                   ))}
                 </div>
@@ -819,6 +816,9 @@ export default function App() {
                 onPlayFullDialogue={handlePlayFullDialogue}
                 onStopPlayback={handleStopPlayback}
                 onSelectWord={handleOpenWordModal}
+                layoutMode={bookLayout}
+                fontSize={bookFontSize}
+                showTransliteration={showTransliteration}
               />
             )}
 
