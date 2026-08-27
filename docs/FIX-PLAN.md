@@ -1097,7 +1097,7 @@ Two caveats on the ground truth: durations were measured on **isolated** words, 
 
 ---
 
-## Reported: generated audio "does not save" (2026-08-27)
+## Cached-audio indicator counted clips playback would not use (2026-08-27)
 
 **It does.** Measured on a running build, audio survives a reload and replays with **zero** TTS requests, for a built-in module and for a custom module alike. A synthetic custom module's records also survive the mount-time `pruneOrphans` pass, so that is not the cause either.
 
@@ -1126,11 +1126,25 @@ Anything cached before the variant scheme existed has no `__v_` suffix at all �
 
 The behaviour is correct in the sense that different settings genuinely need different audio. **The defect is the count**, which promises something the lookup will not honour.
 
-### Not yet fixed
+### Fixed
 
-`getCachedLineIds` already accepts `speakerVoices` and `moduleSpeakers` parameters **and ignores both** — the signature anticipated this and the body never used it. The fix is to have it compute the same key playback does and count only exact matches, which also makes "Download all" offer to fetch precisely what is missing under the current settings.
+The user confirmed the regeneration was a settings change, not a save failure — persistence was working. The indicator was the defect, and it still mattered: **offline study rests on being able to trust it.** A module reporting "8/8 lines" with zero usable clips means going offline and finding nothing plays.
 
-Left for a separate change: it alters what the indicator reports for every existing user, and pre-variant records should probably be swept at the same time rather than lingering as permanently uncounted weight.
+- **One place computes a line's cache identity.** `audioIdentityFor(line, module)` returns `{ voice, context, variant }`, and playback, pre-caching and the indicator all read it. They previously derived it separately, and the indicator did not derive it at all.
+- **`getCachedLineIds` counts exact matches**, taking the identities each line would be looked up under. Without them it falls back to the old permissive count rather than silently reporting nothing.
+- **Settings are a dependency of the count.** A module can go from fully downloaded to not downloaded without the module changing, so the effect watches `speechSettings` and `speakerVoices` as well as the module id.
+- **Pre-variant records are purged on mount.** They were produced word-by-word under the older transcription rules and no current setting reproduces them, so they can never be served — they only inflated the count and occupied quota.
+
+Verified end to end. Seeding one legacy record and one current one, then reloading: the legacy record is removed, and the count tracks the settings exactly.
+
+```
+Reconstructed   0/8      (stored clip is Erasmian)
+Erasmian        1/8      matches
+Modern          0/8
+Erasmian        1/8      returns
+```
+
+Eight tests cover the key logic — voice, variant, line and module all participating, and every variant this app can produce recognised as current.
 
 ---
 

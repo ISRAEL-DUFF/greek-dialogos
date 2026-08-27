@@ -49,6 +49,39 @@ function approximateBytes(base64: string): number {
   return Math.floor((base64.length * 3) / 4);
 }
 
+/**
+ * The cache key. Exported so callers can reason about it and so it can be
+ * tested without a browser: the indicator and the playback lookup must agree
+ * on this exactly, and they previously did not.
+ */
+export function audioCacheKey(
+  moduleId: string,
+  lineId: number,
+  voice: string,
+  variant = ""
+): string {
+  const base = `${moduleId}__line_${lineId}__voice_${voice}`;
+  return variant ? `${base}__v_${variant}` : base;
+}
+
+/**
+ * A record written before rendering variants existed.
+ *
+ * Such audio was produced word-by-word with no accents and the older
+ * transcription rules, which no current setting reproduces — so it can never be
+ * served correctly and is only occupying quota.
+ */
+export function isLegacyRecord(key: string): boolean {
+  return !key.includes("__v_");
+}
+
+/** One line's expected cache identity under the current settings. */
+export interface ExpectedLineAudio {
+  lineId: number;
+  voice: string;
+  variant: string;
+}
+
 class AudioStorageManager {
   private dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -97,8 +130,7 @@ class AudioStorageManager {
    * variants existed, so no already-cached audio is orphaned.
    */
   private makeKey(moduleId: string, lineId: number, voice: string, variant = ""): string {
-    const base = `${moduleId}__line_${lineId}__voice_${voice}`;
-    return variant ? `${base}__v_${variant}` : base;
+    return audioCacheKey(moduleId, lineId, voice, variant);
   }
 
   /**
@@ -227,18 +259,83 @@ class AudioStorageManager {
   /**
    * Check which lines of a module are already cached
    */
+  /**
+   * Which lines have audio that playback will ACTUALLY use.
+   *
+   * Previously this collected every record for the module by id and keyed them
+   * by line, ignoring voice and variant — so a line cached under one voice or
+   * one settings combination was reported as cached under all of them, and then
+   * regenerated on play. The count promised something the lookup would not
+   * honour, and each broken promise costs a synthesis request.
+   *
+   * `expected` carries the identity each line would be looked up under now.
+   */
   public async getCachedLineIds(
     moduleId: string,
-    speakerVoices?: Record<string, string>,
-    moduleSpeakers?: { name: string; defaultVoice: string }[]
+    expected?: ExpectedLineAudio[]
   ): Promise<Set<number>> {
     try {
-      const audioMap = await this.getModuleAudioMap(moduleId);
-      return new Set(Object.keys(audioMap).map((k) => Number(k)));
+      const db = await this.getDB();
+      return await new Promise((resolve) => {
+        const tx = db.transaction([STORE_NAME], "readonly");
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.index("moduleId").getAll(IDBKeyRange.only(moduleId));
+
+        request.onsuccess = () => {
+          const present = new Set((request.result || []).map((r: AudioRecord) => r.key));
+
+          if (!expected) {
+            // No identities supplied: fall back to the old permissive count
+            // rather than silently reporting nothing.
+            resolve(new Set((request.result || []).map((r: AudioRecord) => r.lineId)));
+            return;
+          }
+
+          const hit = new Set<number>();
+          for (const e of expected) {
+            if (present.has(audioCacheKey(moduleId, e.lineId, e.voice, e.variant))) {
+              hit.add(e.lineId);
+            }
+          }
+          resolve(hit);
+        };
+
+        request.onerror = () => resolve(new Set());
+      });
     } catch {
       return new Set();
     }
   }
+
+  /**
+   * Remove records that predate rendering variants. They cannot be served
+   * under any current setting, and they are what made a module report as
+   * downloaded while every line regenerated.
+   */
+  public async purgeLegacyRecords(): Promise<number> {
+    try {
+      const db = await this.getDB();
+      return await new Promise((resolve) => {
+        const tx = db.transaction([STORE_NAME], "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.getAll();
+        let removed = 0;
+        request.onsuccess = () => {
+          for (const rec of (request.result || []) as AudioRecord[]) {
+            if (isLegacyRecord(rec.key)) {
+              store.delete(rec.key);
+              removed++;
+            }
+          }
+        };
+        tx.oncomplete = () => resolve(removed);
+        tx.onerror = () => resolve(removed);
+      });
+    } catch {
+      return 0;
+    }
+  }
+
 
   /**
    * Import multiple audio records for a module into IndexedDB

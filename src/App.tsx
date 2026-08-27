@@ -162,6 +162,17 @@ export default function App() {
     setCustomModules(stored);
 
     const knownIds = [...BUILTIN_MODULES, ...stored].map((m) => m.id);
+    // Records written before rendering variants existed cannot be served under
+    // any current setting — they were produced word-by-word with the older
+    // transcription rules. They are what made a module report as downloaded
+    // while every line regenerated.
+    audioStorage
+      .purgeLegacyRecords()
+      .then((n) => {
+        if (n > 0) console.info(`Removed ${n} audio clip(s) predating pronunciation settings.`);
+      })
+      .catch(() => {});
+
     audioStorage
       .pruneOrphans(knownIds)
       .then((removed) => {
@@ -170,19 +181,29 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Refresh cached line IDs when module changes
-  const refreshCacheStatus = async (moduleId = currentModule.id) => {
+  /**
+   * Count only the lines whose audio playback would actually use, by asking
+   * about the exact identities rather than everything stored for the module.
+   */
+  const refreshCacheStatus = async (mod: AncientGreekModule = currentModule) => {
     try {
-      const ids = await audioStorage.getCachedLineIds(moduleId);
-      setCachedLineIds(ids);
+      const expected = mod.lines.map((line) => {
+        const { voice, variant } = audioIdentityFor(line, mod);
+        return { lineId: line.id, voice, variant };
+      });
+      setCachedLineIds(await audioStorage.getCachedLineIds(mod.id, expected));
     } catch (e) {
       console.warn("Failed to check cached lines:", e);
     }
   };
 
+  // Settings are a dependency: they change the rendering variant, so the same
+  // module can go from fully downloaded to not downloaded without the module
+  // itself changing. The count has to follow.
   useEffect(() => {
-    refreshCacheStatus(currentModule.id);
-  }, [currentModule.id]);
+    refreshCacheStatus(currentModule);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentModule.id, speechSettings, speakerVoices]);
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -206,7 +227,7 @@ export default function App() {
       newVoices[s.name] = s.defaultVoice || "Fenrir";
     });
     setSpeakerVoices(newVoices);
-    refreshCacheStatus(mod.id);
+    refreshCacheStatus(mod);
   };
 
   const handleCustomModulesChange = () => {
@@ -296,12 +317,25 @@ export default function App() {
   };
 
   /**
+   * The identity a line's audio is stored and looked up under.
+   *
+   * Playback, pre-caching and the cached-lines indicator all derive the key
+   * from here. They previously computed it separately — and the indicator did
+   * not compute it at all, counting every record for the module regardless of
+   * voice or settings, so it reported lines as ready that playback would
+   * regenerate.
+   */
+  const audioIdentityFor = (line: DialogueLine, mod: AncientGreekModule) => {
+    const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
+    const { context, variant: ctxVariant } = buildLineContext(line, mod);
+    return { voice, context, variant: `${ctxVariant}${settingsVariant(speechSettings)}` };
+  };
+
+  /**
    * Fetch TTS audio for a line with IndexedDB caching
    */
   const fetchLineAudioBuffer = async (line: DialogueLine): Promise<AudioBuffer> => {
-    const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
-    const { context, variant: ctxVariant } = buildLineContext(line, currentModule);
-    const variant = `${ctxVariant}${settingsVariant(speechSettings)}`;
+    const { voice, context, variant } = audioIdentityFor(line, currentModule);
 
     // 1. Check IndexedDB cache first
     const cached = await audioStorage.getCachedAudio(currentModule.id, line.id, voice, variant);
@@ -381,9 +415,7 @@ export default function App() {
     for (const line of mod.lines) {
       if (controller.signal.aborted) break;
 
-      const voice = speakerVoices[line.speaker] || line.recommendedVoice || "Fenrir";
-      const { context, variant: ctxVariant } = buildLineContext(line, mod);
-      const variant = `${ctxVariant}${settingsVariant(speechSettings)}`;
+      const { voice, context, variant } = audioIdentityFor(line, mod);
       const existing = await audioStorage.getCachedAudio(mod.id, line.id, voice, variant);
 
       if (existing) {
@@ -449,7 +481,7 @@ export default function App() {
       console.warn("Eviction pass failed:", err);
     }
 
-    await refreshCacheStatus(mod.id);
+    await refreshCacheStatus(mod);
 
     setPrecacheResult({ cached, failed, skipped, cancelled: controller.signal.aborted });
     precacheAbortRef.current = null;
@@ -736,7 +768,7 @@ export default function App() {
         modules={[...BUILTIN_MODULES, ...customModules]}
         speakerVoices={speakerVoices}
         onSetSpeakerVoice={handleSetSpeakerVoice}
-        onStorageChanged={() => refreshCacheStatus(currentModule.id)}
+        onStorageChanged={() => refreshCacheStatus(currentModule)}
         onExportModule={() => handleExportCurrentModule(currentModule)}
         onExportLibrary={handleExportFullLibrary}
         busy={isPlaying || isPrecaching}
