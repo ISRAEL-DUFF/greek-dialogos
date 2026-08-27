@@ -415,6 +415,14 @@ function joinAtSeam(left: string, right: string): string {
 
   if (fusionWouldDistort(left, tail)) return `${left} ${tail}`;
 
+  // An aspirate meeting a rough breathing writes the same sound twice:
+  // οὐχ αὑτή gave "ookhhauteh". The χ of οὐχ is aspirated *because* of the
+  // following h, so one h carries both. Restricted to the aspirate digraphs —
+  // "eh"/"oh" are long vowels, and dropping their h would delete the vowel.
+  if (/(kh|th|ph)$/i.test(left) && /^h/i.test(tail)) {
+    return left + tail.slice(1);
+  }
+
   // Consonant + vowel: the consonant becomes the onset of the next syllable.
   // This is why οὐκ exists at all — the κ is there to avoid hiatus.
   return left + tail;

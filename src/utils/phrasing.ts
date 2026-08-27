@@ -100,21 +100,27 @@ const ENCLITICS = new Set([
  * unaccented requirement. Relaxing that test there would undo τίς / τις.
  */
 
-/** Function words that lean forward onto what follows, whatever accent they bear. */
+/**
+ * Function words that lean forward onto what follows, whatever accent they bear.
+ *
+ * This list holds ONLY words that carry an accent — the ones the unaccented test
+ * above cannot reach. Anything already in PROCLITICS is deliberately absent:
+ * repeating it here would match the accented homograph too and destroy the very
+ * distinction that list exists to draw. Listing "ει" here, for instance, bound
+ * εἶ ("you are") to its complement as though it were εἰ ("if").
+ */
 const WEAK_PROCLITICS = new Set([
-  // the article, every form — the oblique forms are not proclitics in the
-  // grammarian's sense, but they are still bound to their noun in speech
-  "ο", "η", "το", "οι", "αι", "τα",
-  "του", "της", "των", "τω", "τη", "τοις", "ταις", "τῳ", "τῃ",
+  // the article — the oblique forms are not proclitics in the grammarian's
+  // sense, but they are still bound to their noun in speech
+  "το", "τα", "του", "της", "των", "τω", "τη", "τοις", "ταις", "τῳ", "τῃ",
   "τον", "την", "τους", "τας",
-  // prepositions
-  "εν", "εις", "ες", "εκ", "εξ", "προς", "δια", "κατα", "μετα", "παρα",
-  "περι", "υπο", "επι", "απο", "συν", "ανα", "υπερ", "αντι", "προ", "αμφι",
-  "ενεκα", "χωρις", "ανευ",
+  // prepositions that bear an accent (ἐν, εἰς, ἐκ, ἐξ are unaccented proclitics)
+  "προς", "δια", "κατα", "μετα", "παρα", "περι", "υπο", "επι", "απο",
+  "συν", "ανα", "υπερ", "αντι", "προ", "αμφι", "ενεκα", "χωρις", "ανευ",
   // coordinators and subordinators that lean on what they introduce
-  "και", "ουδε", "μηδε", "αλλα", "ουτε", "μητε", "ως", "ει", "εαν", "οτι", "ινα",
-  // the negatives
-  "ου", "ουκ", "ουχ", "μη",
+  "και", "ουδε", "μηδε", "αλλα", "ουτε", "μητε", "εαν", "οτι", "ινα",
+  // the accented negative (οὐ, οὐκ, οὐχ are unaccented proclitics)
+  "μη",
 ]);
 
 /**
@@ -127,14 +133,62 @@ const POSTPOSITIVES = new Set([
   "μεν", "δε", "γαρ", "ουν", "δη", "μην", "τοινυν", "μεντοι", "καιτοι", "αρα", "αυ",
 ]);
 
+/**
+ * Homographs whose weak reading depends on which accent the word carries.
+ *
+ * Membership alone is too blunt for these: the bare forms collide with ordinary
+ * content words, and binding a noun or a verb as though it were a particle is a
+ * worse error than leaving a particle unbound. As with τίς / τις, the writing
+ * system already records the difference — here in the shape and position of the
+ * accent rather than its presence.
+ *
+ * Each predicate answers: is THIS spelling the weak one?
+ */
+const ACCENT_SENSITIVE: Record<string, (word: string) => boolean> = {
+  // ἄρα (acute) is the inferential postpositive; ἆρα (circumflex) opens a
+  // question and is a full word that must keep its own prominence.
+  αρα: (w) => !w.normalize("NFD").includes(CIRCUMFLEX) &&
+              !w.normalize("NFD").includes(CIRCUMFLEX_TILDE),
+  // ἀλλά / ἀλλὰ, accented on the final syllable, is the conjunction;
+  // ἄλλα, accented on the first, is "other things" — a noun.
+  αλλα: (w) => accentOnLastVowel(w),
+};
+
+const GREEK_VOWEL = /[αεηιουωΑΕΗΙΟΥΩ]/;
+const COMBINING = /[\u0300-\u036f]/;
+const ANY_ACCENT = /[\u0301\u0300\u0342\u0303]/;
+
+/**
+ * Does the word's accent sit on its final vowel?
+ *
+ * Enough to separate oxytone from paroxytone for the handful of homographs
+ * above, without needing real syllabification.
+ */
+function accentOnLastVowel(word: string): boolean {
+  const nfd = word.normalize("NFD");
+  let last = -1;
+  for (let i = 0; i < nfd.length; i++) if (GREEK_VOWEL.test(nfd[i])) last = i;
+  if (last === -1) return false;
+  for (let i = last + 1; i < nfd.length && COMBINING.test(nfd[i]); i++) {
+    if (ANY_ACCENT.test(nfd[i])) return true;
+  }
+  return false;
+}
+
+/** False when this spelling is the content word rather than the particle. */
+function passesAccentTest(word: string): boolean {
+  const test = ACCENT_SENSITIVE[bareForm(word)];
+  return test ? test(word) : true;
+}
+
 /** True for a function word that leans forward regardless of its accent. */
 export function isWeakProclitic(word: string): boolean {
-  return WEAK_PROCLITICS.has(bareForm(word));
+  return WEAK_PROCLITICS.has(bareForm(word)) && passesAccentTest(word);
 }
 
 /** True for a particle that leans back regardless of its accent. */
 export function isPostpositive(word: string): boolean {
-  return POSTPOSITIVES.has(bareForm(word));
+  return POSTPOSITIVES.has(bareForm(word)) && passesAccentTest(word);
 }
 
 /**

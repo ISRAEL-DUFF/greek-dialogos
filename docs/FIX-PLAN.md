@@ -1491,3 +1491,62 @@ live controls that do nothing.
 `οι`, `εις` remain genuinely ambiguous and keep the proclitic reading; Modern's
 variant still folds in flow and stress, so toggling them re-renders identical
 Modern audio — harmless, and fixing it would invalidate existing Modern caches.
+
+### Homographs the bare-form lists conflated
+
+Testing three further Symposium sentences exposed a hazard created by the weak
+lists themselves. The clitic lists match on *bare form plus unaccented*; the weak
+lists match on bare form alone, and several bare forms collide with ordinary
+content words. Binding a noun or a verb as though it were a particle is a worse
+error than leaving a particle unbound.
+
+| spelling | is | was treated as | now |
+|---|---|---|---|
+| ἆρα | opens a question | postpositive ἄρα | full word |
+| ἄρα | inferential postpositive | — | postpositive |
+| ἀλλά | conjunction "but" | — | weak |
+| ἄλλα | "other things", a noun | conjunction | full word |
+| εἰ | "if" | — | proclitic |
+| εἶ | "you are", a **verb** | proclitic εἰ | full word |
+| ἡ | article | — | proclitic |
+| ἤ | "or" | article | full word |
+
+Visible in the reported sentence: `Ἆρα οὖν` transcribed as `Araoon`, the
+interrogative stripped of its accent. `εἶ σοφός` fused a verb to its complement.
+
+Two distinct causes, two fixes:
+
+**Re-listing words the unaccented rule already handled.** εἰ, ὡς, ἐν, εἰς, ἐκ,
+ἐξ, οὐ, οὐκ, οὐχ, ὁ, ἡ, οἱ, αἱ were copied into `WEAK_PROCLITICS`, which matches
+regardless of accent — destroying the very distinction `PROCLITICS` exists to
+draw. They are unaccented already, so they were never the problem. Removed; the
+weak list now holds only words that *carry* an accent.
+
+**Genuine homographs that differ by accent shape or position.** As with τίς /
+τις, the orthography records the difference — here in which accent and where:
+ἄρα (acute) against ἆρα (circumflex), ἀλλά (oxytone) against ἄλλα (paroxytone).
+`ACCENT_SENSITIVE` holds one predicate per such form, and `accentOnLastVowel`
+separates oxytone from paroxytone without needing full syllabification.
+
+### A seam that wrote one sound twice
+
+`οὐχ αὑτὴ` gave `ookhhauteh`. `fusionWouldDistort` guarded h + vowel but not
+h + h, so the aspirate of οὐχ and the rough breathing of αὑτή both survived —
+though the χ is aspirated *because* of that breathing. Now `ookhauteh`.
+
+Restricted to the aspirate digraphs kh/th/ph: "eh" and "oh" are long vowels, and
+dropping their h would delete the vowel. Predates the phrasing work.
+
+### Result on the three sentences
+
+| sentence | words | groups |
+|---|---|---|
+| Ἡ γὰρ πάλαι ἡμῶν φύσις … | 18 | 13 |
+| Ἆρα οὖν διὰ τὴν ὕβριν … | 11 | 7 |
+| Πάνυ μὲν οὖν ἐπεὶ δὲ … | 16 | 10 |
+
+`Πάνυ‿μὲν‿οὖν`, `Ἆρα‿οὖν`, `ἐπεὶ‿δὲ`, `διὰ‿τὴν‿ὕβριν`, `ὁ‿Ζεὺς`,
+`τοῦ‿ἀνθρώπου` all bind correctly. `νῦν` correctly stays free — it is accented,
+so it is not the enclitic νυν, which is the original accent test still working.
+
+166 tests pass.

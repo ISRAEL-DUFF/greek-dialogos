@@ -10,7 +10,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { groupPhonologicalWords, isProclitic, isEnclitic } from "../src/utils/phrasing";
+import { groupPhonologicalWords, isProclitic, isEnclitic, isProsodicallyWeak } from "../src/utils/phrasing";
 import { convertToSpokenForm } from "../src/utils/phoneticConverter";
 
 const groupsOf = (text: string) =>
@@ -273,5 +273,49 @@ describe("stress density applies without phrasing", () => {
   test("none strips every mark, all keeps the most", () => {
     assert.equal(marks(opts("none")), 0);
     assert.ok(marks(opts("all")) > marks(opts("phrase")), opts("all"));
+  });
+});
+
+describe("homographs the bare-form lists would otherwise conflate", () => {
+  const g = (t: string) => groupPhonologicalWords(t).map((x) => x.words.join("+"));
+
+  // Membership alone is too blunt for these: binding a noun or a verb as
+  // though it were a particle is worse than leaving a particle unbound.
+  test("ἆρα opens a question; ἄρα is the postpositive", () => {
+    assert.equal(isProsodicallyWeak("ἆρα"), false);
+    assert.equal(isProsodicallyWeak("ἄρα"), true);
+    // and it keeps its own stress mark
+    assert.ok(
+      convertToSpokenForm("Ἆρα οὖν", { preserveAccents: true, stressDensity: "all" }).includes("Á"),
+      convertToSpokenForm("Ἆρα οὖν", { preserveAccents: true, stressDensity: "all" })
+    );
+  });
+
+  test("ἀλλά is the conjunction; ἄλλα is a noun", () => {
+    assert.equal(isProsodicallyWeak("ἀλλά"), true);
+    assert.equal(isProsodicallyWeak("ἄλλα"), false);
+    assert.deepEqual(g("ἄλλα λέγει"), ["ἄλλα", "λέγει"]);
+  });
+
+  test("a word already gated by the unaccented rule is not re-listed", () => {
+    // Listing "ει" among the weak proclitics bound εἶ ("you are") to its
+    // complement exactly as though it were εἰ ("if").
+    assert.equal(isProsodicallyWeak("εἰ"), true);
+    assert.equal(isProsodicallyWeak("εἶ"), false);
+    assert.deepEqual(g("εἶ σοφός"), ["εἶ", "σοφός"]);
+    assert.equal(isProsodicallyWeak("ἡ"), true);
+    assert.equal(isProsodicallyWeak("ἤ"), false);
+  });
+});
+
+describe("seams", () => {
+  test("an aspirate meeting a rough breathing writes one h, not two", () => {
+    // οὐχ is aspirated *because* of the following rough breathing.
+    assert.equal(convertToSpokenForm("οὐχ αὑτὴ", { phrasing: true }), "ookhauteh");
+  });
+
+  test("a long-vowel digraph keeps the following h", () => {
+    // "eh"/"oh" are vowels; dropping their h would delete the vowel itself.
+    assert.ok(convertToSpokenForm("τῇ ἡμέρᾳ", { phrasing: true }).includes("hehmera"));
   });
 });
