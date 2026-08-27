@@ -766,23 +766,9 @@ export default function App() {
             
             {dialogueLayoutView === "cards" ? (
               <div className="space-y-4">
-                {/* Context Card */}
-                <div className="bg-[#2D2A26] text-[#F7F5F0] border-2 border-[#2D2A26] p-6 shadow-none flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div>
-                    <span className="text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.3em] block mb-1">
-                      {currentModule.author || "Classical Text"} • {currentModule.stephanusRef || currentModule.genre.toUpperCase()}
-                    </span>
-                    <h2 className="text-2xl font-serif font-normal text-[#F7F5F0]">
-                      {currentModule.title}
-                    </h2>
-                    <p className="text-xs text-[#E5E1D8] font-sans mt-1.5 max-w-2xl leading-relaxed">
-                      {currentModule.description} Recited via <strong>Gemini Flash TTS</strong> with live real-time follow-along word highlighting.
-                    </p>
-                  </div>
-                  <div className="shrink-0 flex items-center gap-2 text-[10px] uppercase font-mono font-bold text-[#F7F5F0] border border-[#8B7355] px-3 py-1.5 bg-[#2D2A26]">
-                    <span>{currentModule.lines.length} Lines • {currentModule.difficulty}</span>
-                  </div>
-                </div>
+                {/* Context card removed: it repeated the module title, which the
+                    page header now carries, together with the line count and
+                    difficulty shown there. */}
 
                 {/* List of Dialogue Lines */}
                 <div className="space-y-3.5">

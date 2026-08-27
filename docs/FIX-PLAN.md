@@ -969,6 +969,29 @@ This is the project's only static check — `npm run lint` is `tsc --noEmit` —
 
 ---
 
+## Three more duplicates removed (2026-08-27)
+
+The control rail consolidated the two visible playback bars, but three redundancies survived because they were nested inside view branches rather than sitting at the top level.
+
+**A third playback bar.** The codex layout carried its own *Play Entire Codex* and *Loop* buttons, inside the `greek-manuscript` branch — so there had been **three** copies of play/loop, not two. Its block also repeated the module title and description, in a column so narrow the heading wrapped across five lines. Removed, 62 lines.
+
+**The context card.** Cards view opened with a dark panel carrying the module title, description, line count and difficulty. The header now shows title, English title and difficulty, so it repeated three of the four. Removed.
+
+**`AudioControls.tsx` was dead.** Once the rail replaced it, nothing referenced the file — but it still contained a full play/loop implementation, so a future reader would have found two plausible-looking playback components. Deleted rather than left as a decoy.
+
+### Verified
+
+```
+playback controls outside the rail   none
+duplicate play buttons in cards      0
+PLAY ENTIRE CODEX in book view       absent
+cards content starts at              y=182
+```
+
+The module title now renders once as page identity, plus once as the folio's own title page in book view — which is the book's frontispiece rather than chrome, and is kept deliberately.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

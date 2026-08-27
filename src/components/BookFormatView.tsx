@@ -325,68 +325,10 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
         {layoutMode === "greek-manuscript" && (
           <div className="mt-8 max-w-3xl mx-auto space-y-6">
             
-            {/* Codex Master Recitation Header */}
-            <div className="p-5 border-2 border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-[10px] uppercase font-sans font-bold text-[#8B7355] tracking-[0.25em]">
-                  <BookOpen className="w-3.5 h-3.5 text-[#8B7355]" />
-                  <span>Textus Graecus Purus • Classical Codex</span>
-                </div>
-                <h3 className="text-xl font-serif text-[#F7F5F0] mt-0.5">
-                  {module.title}
-                </h3>
-                <p className="text-xs text-[#E5E1D8] font-sans mt-1">
-                  Listen to the entire conversation in continuous reconstructed Erasmian pronunciation, or click individual lines and words for lexical details.
-                </p>
-              </div>
-
-              <div className="shrink-0 flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
-                <button
-                  id="codex-play-all-btn"
-                  onClick={isPlaying ? onStopPlayback : onPlayFullDialogue}
-                  disabled={isBuffering}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 border text-xs uppercase font-sans font-bold tracking-widest transition-all cursor-pointer ${
-                    isPlaying
-                      ? "bg-[#8B7355] border-[#8B7355] text-[#F7F5F0] hover:bg-[#A0896B]"
-                      : "bg-[#F7F5F0] border-[#F7F5F0] text-[#2D2A26] hover:bg-transparent hover:text-[#F7F5F0]"
-                  } disabled:opacity-50`}
-                >
-                  {isBuffering ? (
-                    <>
-                      <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent animate-spin" />
-                      <span>Synthesizing...</span>
-                    </>
-                  ) : isPlaying ? (
-                    <>
-                      <Square className="w-3.5 h-3.5 fill-current" />
-                      <span>Stop Recitation</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Play Entire Codex ({module.lines.length} Lines)</span>
-                    </>
-                  )}
-                </button>
-
-                {onToggleLoop && (
-                  <button
-                    id="codex-toggle-loop-btn"
-                    onClick={onToggleLoop}
-                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 border text-xs uppercase font-sans font-bold tracking-wider transition-all cursor-pointer ${
-                      isLooping
-                        ? "bg-[#8B7355] border-[#8B7355] text-[#F7F5F0]"
-                        : "border-[#8B7355]/60 bg-transparent text-[#E5E1D8] hover:border-[#F7F5F0] hover:text-[#F7F5F0]"
-                    }`}
-                    title={isLooping ? "Loop Active" : "Enable Loop"}
-                  >
-                    <Repeat className={`w-3.5 h-3.5 ${isLooping ? "text-[#F7F5F0]" : "text-[#8B7355]"}`} />
-                    <span>Loop: {isLooping ? "ON" : "OFF"}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
+            {/* Codex recitation header removed: it repeated the module title
+                and carried a third copy of play/loop, after the top ribbon
+                and the card-view bar. Identity is in the page header; playback
+                is in the rail. */}
             {/* Manuscript Sheet */}
             <div className="p-6 sm:p-10 border-2 border-[#2D2A26] bg-[#FAFAF7] space-y-6 shadow-xs">
               <div className="flex items-center justify-between pb-3 border-b border-[#E5E1D8] text-[10px] font-mono text-[#8B7355]">
