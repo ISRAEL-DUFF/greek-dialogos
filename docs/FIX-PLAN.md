@@ -1192,6 +1192,41 @@ The *Apology* module is labelled `Apol. 21d`, but its opening line corresponds t
 
 ---
 
+## Notes set as a commentary; fabricated section refs removed (2026-08-27)
+
+Two changes, and the second is the one that mattered more.
+
+### Notes now read like a commentary
+
+Authored citations read `Line 1 (Greeting Formula)`. A commentary keeps the number and drops the topic label, which is editorial furniture rather than a reference. The section is now a definition list — line number, lemma in Greek, note:
+
+```
+ 1   Χαῖρε (Khaîre)        Imperative of χαίρω ('rejoice!')… (Polite civic salutation)
+ 2   τὴν ἀγορὰν            The Agora was not merely a commercial marketplace…
+```
+
+The number column is monospaced and right-aligned with `tabular-nums`, so references line up down the page as they do in a printed apparatus.
+
+### Every line carried an invented page reference
+
+Found while doing the above. `stephanusSection` was:
+
+```ts
+const stephanusSection = `128${String.fromCharCode(97 + (idx % 5))}`;
+```
+
+It generated `128a`–`128e` cycling by line index **for every module, in three separate layouts**. Plato's *Apology* and Aesop's fable both displayed `[128a]` — a page reference belonging to neither, and to no real text at all, since `128` came from the invented default dialogue.
+
+Worse than the hardcoded notes: those sat once at the foot of the page, while this decorated **every line of every text** with a fabricated citation.
+
+Replaced with the actual line number, which is real, verifiable, and standard apparatus practice.
+
+### Verified
+
+Notes render as `1 / Χαῖρε (Khaîre) / Imperative of χαίρω…`, no `Line N` remains, and no `[128x]` appears anywhere in the page.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
