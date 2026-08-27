@@ -260,16 +260,24 @@ function buildSpokenPrompt({
   // dates from when there was a single scheme; with all three selectable it
   // made two options claim the same ground.
   //
-  // The instructions deliberately carry NO delivery adverbs. An earlier
-  // version asked Modern to read "naturally and fluently" while the others
-  // were asked for authenticity, which is a difference in what is requested
-  // rather than in the notation — it made the schemes incomparable, and
-  // measurably so: the fluency wording alone shortened a line by ~17%.
+  // All three ask for the SAME delivery — "fluently" — so they differ only in
+  // what the notation requires. An earlier version asked Modern for fluency
+  // while the others were asked for authenticity, which is a difference in
+  // what is requested rather than in the notation, and it made the schemes
+  // incomparable.
+  //
+  // "Fluently" alone, not "friendly and fluently": fluency concerns rate and
+  // connectedness, while friendliness is an emotional register that risks
+  // pulling vowels toward English and softening the aspirates — the same
+  // dilution hazard as contextual delivery. Measured effect of the fluency
+  // wording: about 7% shorter for Erasmian and 23% for Reconstructed, whose
+  // apparent slowness turned out to be largely an artifact of carrying the
+  // most demanding instruction.
   const pronunciation = modern
-    ? "Read this Greek aloud with Modern Greek pronunciation"
+    ? "Read this Greek aloud fluently, with Modern Greek pronunciation"
     : ipa
-      ? "The following is an IPA phonetic transcription of Ancient Greek. Read it aloud, realising every symbol exactly as specified"
-      : "Read this aloud with Erasmian pronunciation of Ancient Greek, as taught in universities";
+      ? "The following is an IPA phonetic transcription of Ancient Greek. Read it aloud fluently, realising every symbol exactly as specified"
+      : "Read this aloud fluently, with Erasmian pronunciation of Ancient Greek, as taught in universities";
 
   if (!context) {
     return emotion

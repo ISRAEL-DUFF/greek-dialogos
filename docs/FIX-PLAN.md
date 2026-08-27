@@ -849,9 +849,22 @@ Erasmian      zoheh            Khaire, oh phile! Poi badizeis;
 Reconstructed zdɔːˈɛː          ˈkʰai̯re, ˈɔː ˈpʰile! ˈpoi̯ baˈdizdeːs;
 ```
 
-### Prompts name only their own scheme, and carry no delivery adverbs
+### Prompts name only their own scheme, and all ask for the same delivery
 
-The Modern branch had asked the model to read "naturally and fluently" while the others asked for authenticity. That is a difference in **what is requested**, not in the notation, and it made the schemes incomparable — a 2×2 showed the fluency wording alone shortened a line by about 17%, independent of notation. All three now differ only where the notation forces them to.
+The Modern branch had asked the model to read "naturally and fluently" while the others asked for authenticity. That is a difference in **what is requested**, not in the notation, and it made the schemes incomparable.
+
+The fix was first to remove the adverbs entirely. That was over-correction: comparability is a *testing* concern, and each shipped scheme should get whatever prompt makes it sound best. All three now ask for **"fluently"** — the same delivery, so they remain comparable, and each benefits.
+
+**Correcting an earlier claim.** A 2×2 had suggested the fluency wording moved Greek but did nothing for transcribed text. That cell was underpowered (n=2, high variance) and the conclusion was wrong. Measured directly:
+
+| | plain | fluently |
+|---|---|---|
+| Erasmian | 4.82s | 4.48s (−7%) |
+| Reconstructed | 5.74s | 4.42s (−23%) |
+
+**Reconstructed benefits most**, which reframes its main drawback: sounding slow and deliberate was largely an artifact of carrying the most demanding instruction, not something intrinsic to reading IPA.
+
+**"Fluently" only, not "friendly and fluently".** Fluency concerns rate and connectedness; friendliness is an emotional register that risks pulling vowels toward English and softening the aspirates — the same dilution hazard that keeps contextual delivery behind a flag. The half with the phonetic risk was dropped.
 
 That test also settled why transcription sounds slower: under a common prompt, Latin transcription takes **~34% longer** than Greek. Unfamiliar tokens are read in citation form, and the model cannot be talked out of it — the fluency wording sped up Greek and did nothing for Latin. Slowness and the original word-by-word complaint are one phenomenon, not two.
 
