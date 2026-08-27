@@ -739,6 +739,35 @@ These need the listening test. `ου` did not.
 
 ---
 
+## IPA notation — built, evaluated, not adopted (2026-08-27)
+
+Three successive external implementations proposed Latin respelling schemes; all three were unusable (fabricated outputs, broken rough breathing, and mergers of θ/τ, φ/π, χ/κ). But one idea buried in them was worth more than the code: **if the engine accepts IPA, the respelling layer is unnecessary altogether.**
+
+Latin respelling describes Greek sounds through English spelling conventions, so every mapping is a wager on how the engine will read it — and some contrasts cannot be written at all, because English aspiration is allophonic and `t`/`th` are the only levers available.
+
+[`src/utils/ipaConverter.ts`](../src/utils/ipaConverter.ts) emits reconstructed-Attic IPA instead, reusing the phrasing engine unchanged: which words fuse is a fact about Greek, not about notation. Reached with `notation: "ipa"` on `/api/tts`. 22 tests.
+
+### What it solved, in principle
+
+| | Latin | IPA |
+|---|---|---|
+| θ/τ, φ/π, χ/κ | inexpressible in English spelling | `tʰ` vs `t` |
+| iota subscript | dropped — `λόγῳ` = `λόγω` | `ˈloɡɔːi̯` vs `ˈloɡɔː` |
+| υ | `u`, or an invented `yu` glide | `y`, front rounded |
+| ου | argued from English orthography | `uː`, because that is the sound |
+
+**And a free win on Gap 1.** A circumflex can only sit on a long nucleus, so for the dichrona — α ι υ, whose quantity the spelling never shows — the accent itself carries the length: `πρᾶγμα → ˈpraːɡma` against `πράγματα → ˈpraɡmata`, `μῦθος → ˈmyːtʰos` against `μύθος → ˈmytʰos`. That insight is notation-independent, but only IPA can express it.
+
+### Why it is not the default
+
+Compared by ear on real dialogue, **the Latin rendering was judged slightly better**. Precision in the notation buys nothing if the model does not realise the symbols accurately, and a familiar pseudo-English string evidently suits this model better than phonetic symbols.
+
+This is a fact about the current TTS model, not about IPA. The path is kept and tested so it can be re-evaluated whenever the model changes — the work is done, and the comparison is one request away.
+
+**Consequence: the phoneme questions stay open.** θ/τ, φ/π and χ/κ remain unresolved in the shipping path, and vowel length remains unrepresented. Gaps 1 and 2 in the engine document are still live, and the reviewer's ruling still matters.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.

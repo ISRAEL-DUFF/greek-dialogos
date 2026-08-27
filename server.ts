@@ -3,6 +3,7 @@ import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { convertToReconstructedPhonetics, convertToSpokenForm } from "./src/utils/phoneticConverter";
+import { convertToIPAForm } from "./src/utils/ipaConverter";
 import { VOICE_NAMES, VoiceName } from "./src/types";
 
 dotenv.config();
@@ -238,9 +239,11 @@ function buildSpokenPrompt({
   phoneticText,
   emotion,
   context,
+  ipa = false,
 }: {
   phoneticText: string;
   emotion?: string;
+  ipa?: boolean;
   context?: {
     speakerName?: string;
     speakerRole?: string;
@@ -249,7 +252,11 @@ function buildSpokenPrompt({
     previousContextNote?: string;
   };
 }): string {
-  const pronunciation = "Speak with authentic Reconstructed Attic/Erasmian Ancient Greek pronunciation";
+  // IPA needs a different instruction: the model must be told these are
+  // phonetic symbols to realise, not letters to read.
+  const pronunciation = ipa
+    ? "The following is an IPA phonetic transcription of Ancient Greek. Pronounce it exactly as the symbols specify, realising every symbol precisely"
+    : "Speak with authentic Reconstructed Attic/Erasmian Ancient Greek pronunciation";
 
   if (!context) {
     return emotion
@@ -293,6 +300,9 @@ app.post("/api/tts", async (req, res) => {
       // this feature — or a direct API user — gets byte-identical output.
       phrasing = false,
       accents = false,
+      // "latin" respells Greek using English spelling conventions; "ipa"
+      // states the sounds directly and sidesteps the guesswork entirely.
+      notation = "latin",
     } = req.body;
     if (!text) {
       return res.status(400).json({ error: "Text is required" });
@@ -308,14 +318,14 @@ app.post("/api/tts", async (req, res) => {
     // Group into phonological words before transcribing, so proclitics,
     // enclitics and elisions are spoken as single units rather than as a list
     // of citation forms. Falls back to word-by-word when phrasing is off.
-    const phoneticText = convertToSpokenForm(text, {
-      phrasing,
-      preserveAccents: accents,
-    });
+    const useIPA = notation === "ipa";
+    const phoneticText = useIPA
+      ? convertToIPAForm(text, { phrasing })
+      : convertToSpokenForm(text, { phrasing, preserveAccents: accents });
 
     // Contextual delivery is opt-in: the client sends `context` only when the
     // experimental toggle is on, so default behaviour is byte-identical.
-    const spokenPrompt = buildSpokenPrompt({ phoneticText, emotion, context });
+    const spokenPrompt = buildSpokenPrompt({ phoneticText, emotion, context, ipa: useIPA });
 
     // 1. OpenRouter TTS if OPENROUTER_API_KEY is configured
     if (isOpenRouterConfigured()) {
@@ -336,6 +346,7 @@ app.post("/api/tts", async (req, res) => {
           contextual: Boolean(context),
           phrasing: Boolean(phrasing),
           accents: Boolean(accents),
+          notation,
         });
       } catch (openRouterErr: any) {
         console.warn("OpenRouter TTS failed, attempting fallback to Gemini if available:", openRouterErr?.message);
