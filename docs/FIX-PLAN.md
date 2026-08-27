@@ -1227,6 +1227,31 @@ Notes render as `1 / Χαῖρε (Khaîre) / Imperative of χαίρω…`, no `L
 
 ---
 
+## Vercel: function crashes on invocation (2026-08-27) — open
+
+**Symptom:** the app deploys and loads, but `/api/providers` and `/api/ai-import-module` both return **500**, and the providers response body begins `"A server e…"` — Vercel's own `A server error has occurred` page, not our JSON.
+
+**What that rules in and out.** The function is being *reached*: a routing failure would return the SPA shell (`<!doctype html>`), which is the P2-2 failure mode and is not what happened. Vercel's error page means the function was invoked and crashed. And `/api/providers` only reads environment variables — reaching its handler cannot 500 — so the crash happens during **module load**, before any route runs.
+
+That also means missing environment variables are not the whole story: absent keys would return `{"openrouter": false}` with a 200, not a platform error.
+
+**Reproduced locally? No.** `VERCEL=1 tsx -e "import('./api/index.ts')"` loads cleanly and exports a function, so the fault is environment-specific.
+
+### Hardened regardless
+
+Two hazards in the startup path were unsafe in any serverless runtime:
+
+- The guard tested only `process.env.VERCEL`, so any other host — or a Vercel runtime not setting it — would reach `app.listen()` inside a function. Now checks `VERCEL`, `AWS_LAMBDA_FUNCTION_NAME`, `LAMBDA_TASK_ROOT` and `FUNCTION_TARGET`.
+- **`startServer()` is async and was called with no `.catch()`.** Any rejection became an unhandled promise rejection, which Node terminates the process for — surfacing as exactly this generic platform 500, during module load, with no clue as to the cause. Now caught and logged.
+
+### Still to determine
+
+The remaining suspect is the build configuration. `tsconfig.json` sets `noEmit: true`, `allowImportingTsExtensions: true` and `moduleResolution: "bundler"` — written for Vite, and not what `@vercel/node` needs when it compiles `api/index.ts` and follows `../server` into `./src/utils/*.ts`. A separate tsconfig for the function, or `includeFiles`, may be required.
+
+**This needs the deployment's function logs**, which name the actual error; Vercel's error page deliberately does not. Everything above is inference from two status codes.
+
+---
+
 ## Suggested order
 
 Verification is done. The sequence below starts from a known-broken baseline and restores function before improving it.
