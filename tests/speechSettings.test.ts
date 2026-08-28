@@ -68,3 +68,36 @@ describe("defaults", () => {
     assert.equal(DEFAULT_SETTINGS.stressDensity, "none");
   });
 });
+
+describe("word highlighting", () => {
+  test("is off by default", () => {
+    // The marker is driven by an estimate, and connected speech made that
+    // estimate worse — a marker on the wrong word is worse than none.
+    assert.equal(DEFAULT_SETTINGS.wordHighlight, false);
+  });
+
+  test("is not part of the cache variant", () => {
+    // It changes nothing about the audio. Including it would re-render every
+    // clip to toggle a visual aid.
+    const off = { ...DEFAULT_SETTINGS, wordHighlight: false };
+    const on = { ...DEFAULT_SETTINGS, wordHighlight: true };
+    assert.equal(settingsVariant(on), settingsVariant(off));
+  });
+
+  test("survives a round trip through storage validation", () => {
+    for (const value of [true, false]) {
+      const parsed = JSON.parse(JSON.stringify({ ...DEFAULT_SETTINGS, wordHighlight: value }));
+      assert.equal(typeof parsed.wordHighlight, "boolean");
+      assert.equal(parsed.wordHighlight, value);
+    }
+  });
+
+  test("a stored blob missing the field falls back to off", () => {
+    const legacy: Record<string, unknown> = { ...DEFAULT_SETTINGS };
+    delete legacy.wordHighlight;
+    assert.equal(
+      typeof legacy.wordHighlight === "boolean" ? legacy.wordHighlight : DEFAULT_SETTINGS.wordHighlight,
+      false
+    );
+  });
+});

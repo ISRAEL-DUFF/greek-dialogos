@@ -13,7 +13,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { audioCacheKey, isLegacyRecord } from "../src/utils/audioStorage";
+import { audioCacheKey, isLegacyRecord, variantOf } from "../src/utils/audioStorage";
 
 describe("cache key identity", () => {
   test("voice is part of the key", () => {
@@ -67,3 +67,29 @@ describe("legacy records", () => {
     }
   });
 });
+
+describe("export/import round-trip preserves the variant", () => {
+  // The variant used to live only inside the composite key. Export reads
+  // records, not keys, so it dropped the variant and every clip came back
+  // under the legacy no-variant key.
+  test("variantOf reads the stored field when present", () => {
+    assert.equal(
+      variantOf({ key: "m__line_1__voice_Fenrir__v_efn", variant: "efn" } as never),
+      "efn"
+    );
+  });
+
+  test("variantOf recovers the variant from a key written before the field", () => {
+    assert.equal(variantOf({ key: "m__line_1__voice_Fenrir__v_efn" } as never), "efn");
+  });
+
+  test("a legacy record with no variant in its key reports none", () => {
+    assert.equal(variantOf({ key: "m__line_1__voice_Fenrir" } as never), "");
+  });
+
+  test("a full round-trip lands on the key it started from", () => {
+    const original = audioCacheKey("m", 3, "Fenrir", "efn");
+    const exported = variantOf({ key: original } as never);
+    assert.equal(audioCacheKey("m", 3, "Fenrir", exported), original);
+  });
+})

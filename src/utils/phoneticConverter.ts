@@ -1,3 +1,4 @@
+import { ELISION_FINAL } from "./elision.js";
 /**
  * Reconstructed Ancient Greek Phonetic Transcriber
  * 
@@ -18,6 +19,15 @@ const DIAERESIS = "\u0308"; // Dialytika
 
 export interface PhoneticOptions {
   preserveAccents?: boolean;
+  /**
+   * Render a grave accent as a stress mark.
+   *
+   * Normally false: the grave marks an accent Greek suppresses in context, and
+   * marking it would place stress exactly where the language removes it. The
+   * exception is a group that would otherwise carry no prominence at all — see
+   * the rescue in convertToSpokenForm.
+   */
+  markGrave?: boolean;
 }
 
 /**
@@ -104,8 +114,8 @@ function convertSingleGreekWord(word: string, options: PhoneticOptions = {}): st
 
       if (diphthongReplacement) {
         // Check for accent on first or second vowel
-        const hasAccent1 = hasStressAccentInRange(chars, i + 1, nextBaseIndex);
-        const hasAccent2 = hasStressAccentInRange(chars, nextBaseIndex + 1, findNextBaseCharIndex(chars, nextBaseIndex + 1));
+        const hasAccent1 = hasStressAccentInRange(chars, i + 1, nextBaseIndex, options.markGrave);
+        const hasAccent2 = hasStressAccentInRange(chars, nextBaseIndex + 1, findNextBaseCharIndex(chars, nextBaseIndex + 1), options.markGrave);
         
         let out = diphthongReplacement;
         if (options.preserveAccents && (hasAccent1 || hasAccent2)) {
@@ -142,7 +152,7 @@ function convertSingleGreekWord(word: string, options: PhoneticOptions = {}): st
 
     // Check accent on this character
     const nextBoundary = findNextBaseCharIndex(chars, i + 1);
-    const hasAcute = hasStressAccentInRange(chars, i + 1, nextBoundary);
+    const hasAcute = hasStressAccentInRange(chars, i + 1, nextBoundary, options.markGrave);
 
     if (lowerCh === "η") {
       // η -> "eh" (Prevents modern "ee" shifting)
@@ -340,13 +350,19 @@ function isCombiningMark(char: string): boolean {
  * because a word with a suppressed accent is not a clitic. That check lives in
  * phrasing.ts as isAccented.
  */
-function hasStressAccentInRange(chars: string[], start: number, end: number): boolean {
+function hasStressAccentInRange(
+  chars: string[],
+  start: number,
+  end: number,
+  includeGrave = false
+): boolean {
   const limit = end === -1 ? chars.length : end;
   for (let k = start; k < limit; k++) {
     if (
       chars[k] === ACUTE_ACCENT ||
       chars[k] === CIRCUMFLEX ||
-      chars[k] === CIRCUMFLEX_COMBINING
+      chars[k] === CIRCUMFLEX_COMBINING ||
+      (includeGrave && chars[k] === GRAVE_ACCENT)
     ) {
       return true;
     }
@@ -369,11 +385,11 @@ function hasStressAccentInRange(chars: string[], start: number, end: number): bo
  * keeps every mark attached to the word that owns it.
  */
 
-import { groupPhonologicalWords, PhraseGroup } from "./phrasing.js";
+import { groupPhonologicalWords, isProsodicallyWeak, PhraseGroup } from "./phrasing.js";
 
 const VOWEL_START = /^[aeiouāēīōū]/i;
 const CONSONANT_END = /[bcdfghjklmnpqrstvwxyz]$/i;
-const TRAILING_ELISION = /['’᾽ʼ]$/;
+const TRAILING_ELISION = ELISION_FINAL;
 
 /**
  * Would fusing these two transcriptions create a sound that is in neither word?
@@ -415,6 +431,14 @@ function joinAtSeam(left: string, right: string): string {
 
   if (fusionWouldDistort(left, tail)) return `${left} ${tail}`;
 
+  // An aspirate meeting a rough breathing writes the same sound twice:
+  // οὐχ αὑτή gave "ookhhauteh". The χ of οὐχ is aspirated *because* of the
+  // following h, so one h carries both. Restricted to the aspirate digraphs —
+  // "eh"/"oh" are long vowels, and dropping their h would delete the vowel.
+  if (/(kh|th|ph)$/i.test(left) && /^h/i.test(tail)) {
+    return left + tail.slice(1);
+  }
+
   // Consonant + vowel: the consonant becomes the onset of the next syllable.
   // This is why οὐκ exists at all — the κ is there to avoid hiatus.
   return left + tail;
@@ -441,6 +465,43 @@ export type StressDensity = "all" | "phrase" | "none";
  * that follows, yet written with a circumflex.
  */
 const NEVER_STRESSED = new Set(["ω", "ωι"]);
+
+/**
+ * May this word carry the group's stress mark?
+ *
+ * A bound function word taking the accent is worse than leaving the group
+ * unmarked — `téhn anthrohpínehn` puts the prominence on the article. The
+ * mark belongs on the group's lexical head.
+ */
+/** A word whose only accent is a grave — an accent suppressed in context. */
+function hasGraveOnly(word: string): boolean {
+  const nfd = word.normalize("NFD");
+  return nfd.includes(GRAVE_ACCENT) && !/[\u0301\u0342\u0303]/.test(nfd);
+}
+
+/**
+ * The word that should carry a group's mark when nothing in it has a live
+ * accent, or -1 if the group is legitimately silent.
+ *
+ * An oxytone content word takes a grave before a following word, so
+ * `ὁ Ζεὺς` rendered as `hozeus` — the subject of its clause with no prominence
+ * at all. Suppression is relative, not absolute: a reduced accent is still an
+ * accent, and it beats a group that is entirely flat. Measured at 7% of groups
+ * on real text.
+ *
+ * Rightmost, because nuclear prominence falls late.
+ */
+function graveRescueIndex(words: string[]): number {
+  if (words.some((w) => canTakeStress(w) && isAccentedWord(w))) return -1;
+  for (let i = words.length - 1; i >= 0; i--) {
+    if (canTakeStress(words[i]) && hasGraveOnly(words[i])) return i;
+  }
+  return -1;
+}
+
+function canTakeStress(word: string): boolean {
+  return !NEVER_STRESSED.has(bareWord(word)) && !isProsodicallyWeak(word);
+}
 
 /**
  * Sentence-final punctuation only. A comma is a minor break that does not
@@ -479,11 +540,13 @@ function isAccentedWord(word: string): boolean {
  */
 export function convertToSpokenForm(text: string, options: SpokenFormOptions = {}): string {
   if (!text) return "";
-  if (options.phrasing === false) {
-    return convertToReconstructedPhonetics(text, options);
-  }
-
-  const groups: PhraseGroup[] = groupPhonologicalWords(text);
+  // Word-by-word still respects the stress setting. Previously this returned
+  // early, so with phrasing off all three densities produced the same fully
+  // accented string and the control silently did nothing.
+  const groups: PhraseGroup[] =
+    options.phrasing === false
+      ? text.split(/\s+/).filter(Boolean).map((w) => ({ words: [w], join: "none" as const }))
+      : groupPhonologicalWords(text);
   const density: StressDensity = options.stressDensity ?? "phrase";
   const wantAccents = Boolean(options.preserveAccents) && density !== "none";
 
@@ -500,7 +563,10 @@ export function convertToSpokenForm(text: string, options: SpokenFormOptions = {
 
       // Nuclear stress falls on the last accented word of the phrase.
       for (let j = i; j >= start; j--) {
-        if (groups[j].words.some(isAccentedWord)) {
+        if (
+          groups[j].words.some((w) => isAccentedWord(w) && canTakeStress(w)) ||
+          graveRescueIndex(groups[j].words) !== -1
+        ) {
           allowed[j] = true;
           break;
         }
@@ -512,13 +578,14 @@ export function convertToSpokenForm(text: string, options: SpokenFormOptions = {
   return groups
     .map((group, index) => {
       const groupOptions = { ...options, preserveAccents: allowed[index] };
+      const rescue = allowed[index] ? graveRescueIndex(group.words) : -1;
       return group.words
-        .map((word) =>
+        .map((word, wordIndex) =>
           convertToReconstructedPhonetics(
             word,
             // Never let an excluded particle take the mark within its group.
-            groupOptions.preserveAccents && !NEVER_STRESSED.has(bareWord(word))
-              ? groupOptions
+            groupOptions.preserveAccents && canTakeStress(word)
+              ? { ...groupOptions, markGrave: wordIndex === rescue }
               : { ...groupOptions, preserveAccents: false }
           )
         )

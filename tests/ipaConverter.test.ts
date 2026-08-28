@@ -22,7 +22,7 @@ describe("distinctions the Latin scheme risks losing", () => {
   });
 
   test("every vowel has its own symbol", () => {
-    const vowels = ["ἄ", "ἔ", "ἤ", "ἴ", "ὄ", "ὔ", "ὤ"].map(ipa);
+    const vowels = ["ἄ", "ἔ", "ἤ", "ἴ", "ὄ", "ὔ", "ὤ"].map((w) => ipa(w));
     assert.equal(new Set(vowels).size, vowels.length, `merged: ${vowels.join(" ")}`);
   });
 
@@ -124,5 +124,90 @@ describe("phrasing is shared with the Latin path", () => {
     // "h" is only ever [h] in IPA, so ἐγώ + εἰμι cannot invent an aspirate.
     const out = line("ἐγώ εἰμι");
     assert.equal(out, "eˈɡɔːeːmi");
+  });
+});
+
+describe("stress density in Reconstructed", () => {
+  // convertToIPAForm never received stressDensity, so the control was inert on
+  // this scheme: all three settings produced byte-identical IPA.
+  const text = "Ἔστι δὴ οὖν τοῦ ὅλου ἐπιθυμία καὶ δίωξις Ἔρως καλούμενος.";
+  const out = (stressDensity: "all" | "phrase" | "none") =>
+    line(text, { phrasing: true, stressDensity });
+  const marks = (s: string) => (s.match(/ˈ/g) || []).length;
+
+  test("the three densities differ", () => {
+    assert.equal(new Set([out("all"), out("phrase"), out("none")]).size, 3);
+  });
+
+  test("none removes every stress mark", () => {
+    assert.equal(marks(out("none")), 0);
+  });
+
+  test("phrase keeps exactly one mark for a single sentence", () => {
+    assert.equal(marks(out("phrase")), 1);
+  });
+
+  test("all keeps a mark on each lexical word", () => {
+    assert.ok(marks(out("all")) > 1, out("all"));
+  });
+
+  test("defaults to full marking, the long-standing behaviour", () => {
+    assert.equal(line(text, { phrasing: true }), out("all"));
+  });
+
+  test("weak function words carry no mark even at 'all'", () => {
+    // τοῦ and καί are bound; the mark belongs on their heads.
+    const all = out("all");
+    assert.ok(!all.includes("ˈtuː"), all);
+    assert.ok(!all.includes("ˈkai̯"), all);
+  });
+});
+
+describe("grave rescue in Reconstructed", () => {
+  const g = (t: string) => line(t, { phrasing: true, stressDensity: "all" });
+
+  test("a group with only a grave gets one mark", () => {
+    assert.equal(g("ὁ Ζεὺς"), "hoˈzdeu̯s");
+    assert.equal((g("ὁ Ζεὺς").match(/ˈ/g) || []).length, 1);
+  });
+
+  test("a live accent still wins", () => {
+    assert.equal(g("τὸν λόγον"), "tonˈloɡon");
+  });
+
+  test("an all-weak group stays unmarked", () => {
+    assert.equal(g("ἐπεὶ δὲ"), "epeːde");
+  });
+});
+
+describe("punctuation attached to a word", () => {
+  // The aspiration was unshifted to index 0, i.e. before the token rather than
+  // before the first sound, and placeStress walked back over the punctuation as
+  // though it were a consonant: «ὁ gave h«o and (ὕβριν gave hˈ(ybrin.
+  test("a rough breathing stays inside leading punctuation", () => {
+    assert.equal(ipa("(ὁ"), "(ho");
+    assert.equal(ipa("«ὁ"), "«ho");
+    assert.equal(ipa("(ἡμῶν"), "(hɛːˈmɔːn");
+  });
+
+  test("the stress mark stays inside leading punctuation", () => {
+    assert.equal(ipa("(ὕβριν"), "(ˈhybrin");
+  });
+
+  test("the bare word is unchanged", () => {
+    assert.equal(ipa("ὁ"), "ho");
+    assert.equal(ipa("ὕβριν"), "ˈhybrin");
+  });
+
+  test("trailing punctuation still passes through", () => {
+    assert.equal(ipa("ὕβριν."), "ˈhybrin.");
+    assert.equal(ipa("ἡμῶν;"), "hɛːˈmɔːn;");
+  });
+
+  test("a parenthetical inside a sentence survives intact", () => {
+    assert.equal(
+      line("ὁ Ζεὺς (ὁ πατήρ) ἔτεμεν.", { phrasing: true, stressDensity: "all" }),
+      "hoˈzdeu̯s (ho paˈtɛːr) ˈetemen."
+    );
   });
 });

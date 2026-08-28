@@ -1,5 +1,5 @@
 import React from "react";
-import { Play, Square, Repeat, HardDrive, Loader2, X, Layers, BookOpen, Check } from "lucide-react";
+import { Play, Square, Repeat, HardDrive, Loader2, X, Layers, BookOpen, Check, Highlighter } from "lucide-react";
 import { DisplayMode } from "../types";
 import { BookLayoutMode, FontSizeOption } from "./BookFormatView";
 
@@ -16,6 +16,10 @@ interface ControlRailProps {
   setPlaybackSpeed: (s: number) => void;
   isLooping: boolean;
   onToggleLoop: () => void;
+
+  /** Highlight each word as it is spoken. Off by default — see SpeechSettings. */
+  wordHighlight: boolean;
+  onToggleWordHighlight: () => void;
 
   layout: DialogueLayout;
   setLayout: (l: DialogueLayout) => void;
@@ -144,6 +148,20 @@ export const ControlRail: React.FC<ControlRailProps> = (p) => {
       >
         <Repeat className="w-3 h-3" />
         Loop {p.isLooping ? "on" : "off"}
+      </button>
+
+      <button
+        onClick={p.onToggleWordHighlight}
+        aria-pressed={p.wordHighlight}
+        title="Highlight each word as it is spoken. Timings are estimated from the text, not measured from the audio, so the marker can drift behind the voice."
+        className={`w-full flex items-center justify-center gap-1.5 px-2 py-1.5 border text-[10px] uppercase font-sans font-bold tracking-wider cursor-pointer transition-all ${
+          p.wordHighlight
+            ? "border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0]"
+            : "border-[#E5E1D8] text-[#5C564E] hover:border-[#2D2A26]"
+        }`}
+      >
+        <Highlighter className="w-3 h-3" />
+        Follow along {p.wordHighlight ? "on" : "off"}
       </button>
 
       <Section title="Format">

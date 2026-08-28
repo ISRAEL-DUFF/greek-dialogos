@@ -25,6 +25,20 @@ export interface SpeechSettings {
   stressDensity: StressDensity;
   /** Tell the model who is speaking and what they are answering. */
   contextualDelivery: boolean;
+  /**
+   * Highlight each word as it is spoken.
+   *
+   * Off by default. The highlight is driven by an *estimate* — word timings are
+   * predicted from the transcription's shape, since the engine returns audio
+   * with no timing information. Connected speech made that estimate worse, not
+   * better: once words are fused into phonological groups and the engine is
+   * told not to pause between them, there are no longer per-word boundaries to
+   * predict, and the marker drifts behind the voice.
+   *
+   * A marker pointing at the wrong word is worse than no marker, so this is
+   * opt-in until the timings come from the audio rather than from a guess.
+   */
+  wordHighlight: boolean;
 }
 
 export const DEFAULT_SETTINGS: SpeechSettings = {
@@ -32,6 +46,7 @@ export const DEFAULT_SETTINGS: SpeechSettings = {
   connectedSpeech: true,
   stressDensity: "none",
   contextualDelivery: false,
+  wordHighlight: false,
 };
 
 /** Reference material for the settings UI. Written for a learner, not a linguist. */
@@ -96,6 +111,10 @@ export function loadSettings(): SpeechSettings {
         typeof parsed?.contextualDelivery === "boolean"
           ? parsed.contextualDelivery
           : DEFAULT_SETTINGS.contextualDelivery,
+      wordHighlight:
+        typeof parsed?.wordHighlight === "boolean"
+          ? parsed.wordHighlight
+          : DEFAULT_SETTINGS.wordHighlight,
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -115,11 +134,48 @@ export function saveSettings(settings: SpeechSettings): void {
  *
  * Folded into the audio cache key so a settings change never serves a clip
  * rendered under different settings. Contextual delivery is excluded: it has
- * its own per-line hash, since it depends on the neighbouring line too.
+ * its own per-line hash, since it depends on the neighbouring line too. Word
+ * highlighting is excluded because it changes nothing about the audio —
+ * including it would re-render every clip to toggle a visual aid.
  */
+/**
+ * Bumped whenever the transcribers change what they emit for the same settings.
+ *
+ * Without this, improving the phrasing rules leaves every previously cached clip
+ * keyed as if it were current, and the app confidently serves audio rendered by
+ * the old engine — the same class of fault as a colliding cache key, just slower
+ * to notice.
+ *
+ * Generation 6: both transcribed schemes carry fuller delivery instructions in
+ * the speech prompt. The prompt is not part of the variant, so without this bump
+ * a line already cached under the same settings would keep playing its old
+ * delivery — and an A/B of a prompt edit would silently compare nothing.
+ *
+ * Generation 5: U+1FBF GREEK PSILI recognised as an elision mark, so `Ἆρ᾿
+ * οἶσθα` fuses instead of leaking the bare mark to the engine; a form that is
+ * both proclitic and enclitic now reads as proclitic.
+ *
+ * Generation 4: in Reconstructed, a rough breathing and a stress mark no longer
+ * escape outside leading punctuation — «ὁ was transcribed h«o.
+ *
+ * Generation 3: a group with no live accent promotes its rightmost grave, so a
+ * clause subject like ὁ Ζεὺς is no longer left flat; homograph gates for
+ * ἆρα/ἄρα, ἀλλά/ἄλλα, εἰ/εἶ, ἡ/ἤ; an aspirate meeting a rough breathing writes
+ * one h.
+ *
+ * Generation 2: prosodically weak function words (the article, prepositions,
+ * καί, postpositive particles) now bind to their neighbours and never carry the
+ * stress mark; stress density is honoured word-by-word and in Reconstructed.
+ * Modern is deliberately excluded — it is passed through untranscribed, so none
+ * of that changed a single byte of its output, and churning its cache would
+ * cost real credits for identical audio.
+ */
+const TRANSCRIBER_GENERATION = "6";
+
 export function settingsVariant(settings: SpeechSettings): string {
   const scheme = settings.pronunciation[0]; // m / e / r
   const flow = settings.connectedSpeech ? "f" : "-";
   const stress = settings.stressDensity[0]; // a / p / n
-  return `${scheme}${flow}${stress}`;
+  const base = `${scheme}${flow}${stress}`;
+  return settings.pronunciation === "modern" ? base : `${base}${TRANSCRIBER_GENERATION}`;
 }

@@ -10,11 +10,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import {
-  groupPhonologicalWords,
-  isProclitic,
-  isEnclitic,
-} from "../src/utils/phrasing";
+import { groupPhonologicalWords, isProclitic, isEnclitic, isProsodicallyWeak } from "../src/utils/phrasing";
 import { convertToSpokenForm } from "../src/utils/phoneticConverter";
 
 const groupsOf = (text: string) =>
@@ -152,12 +148,28 @@ describe("fusion never invents a phoneme", () => {
 describe("stress marking", () => {
   test("acute and circumflex are marked as stress", () => {
     assert.equal(convertToSpokenForm("πολύ", { preserveAccents: true }), "polú");
-    assert.equal(convertToSpokenForm("τῷ", { preserveAccents: true }), "tóh");
+    // A lexical word with a circumflex. The dative article τῷ used to stand
+    // here, which tested the wrong thing: it is a function word, and function
+    // words are exactly what must never carry the mark.
+    assert.equal(convertToSpokenForm("σῶμα", { preserveAccents: true }), "sóhma");
   });
 
   test("the grave is NOT marked — it is a suppressed accent", () => {
     assert.equal(convertToSpokenForm("τὸ", { preserveAccents: true }), "to");
-    assert.equal(convertToSpokenForm("τὸν λόγον", { preserveAccents: true }), "ton lógon");
+    // τὸν binds forward now, so the pair fuses; the point stands either way —
+    // the grave leaves no mark while the noun keeps its own.
+    assert.equal(convertToSpokenForm("τὸν λόγον", { preserveAccents: true }), "tonlógon");
+    assert.equal(
+      convertToSpokenForm("τὸν λόγον", { preserveAccents: true, phrasing: false }),
+      "ton lógon"
+    );
+  });
+
+  test("a prosodically weak word never takes the mark", () => {
+    // The article is bound to its noun; marking it would put the prominence
+    // on the wrong word.
+    assert.equal(convertToSpokenForm("τῷ", { preserveAccents: true }), "toh");
+    assert.equal(convertToSpokenForm("καὶ", { preserveAccents: true }), "kai");
   });
 
   test("accents are off by default", () => {
@@ -201,5 +213,176 @@ describe("stress density", () => {
 
   test("phrasing still applies with no stress marks at all", () => {
     assert.equal(convertToSpokenForm("οὐκ ἐν", { phrasing: true, stressDensity: "none" }), "ooken");
+  });
+});
+
+
+describe("prosodically weak words bind to their neighbours", () => {
+  const groups = (t: string) => groupPhonologicalWords(t).map((g) => g.words.join("+"));
+
+  // These words carry accents, so they are not clitics and the unaccented test
+  // rejects them. They are still bound in speech, which left sentences built
+  // from function words completely ungrouped.
+  test("the oblique article binds forward despite its accent", () => {
+    assert.deepEqual(groups("τὴν ἀνθρωπίνην"), ["τὴν+ἀνθρωπίνην"]);
+    assert.deepEqual(groups("τοῦ ὅλου"), ["τοῦ+ὅλου"]);
+  });
+
+  test("καί binds forward", () => {
+    assert.deepEqual(groups("καὶ τὰ παθήματα"), ["καὶ+τὰ+παθήματα"]);
+  });
+
+  test("a postpositive particle binds back", () => {
+    assert.deepEqual(groups("πρῶτον μὲν"), ["πρῶτον+μὲν"]);
+    assert.deepEqual(groups("λέγει γάρ"), ["λέγει+γάρ"]);
+  });
+
+  test("the sentence that exposed the gap now groups", () => {
+    const line =
+      "Ἐρυξίμαχε πρῶτον μὲν δεῖ ὑμᾶς μαθεῖν τὴν ἀνθρωπίνην φύσιν καὶ τὰ παθήματα αὐτῆς";
+    const g = groups(line);
+    assert.equal(line.split(/\s+/).length, 13);
+    assert.ok(g.length < 13, `still ungrouped: ${JSON.stringify(g)}`);
+    assert.ok(g.includes("πρῶτον+μὲν"), JSON.stringify(g));
+    assert.ok(g.includes("τὴν+ἀνθρωπίνην"), JSON.stringify(g));
+  });
+
+  test("the accent still decides for true clitics", () => {
+    // The relaxed test must not leak into the clitic lists, or τίς / τις breaks.
+    assert.deepEqual(groups("τίς ἐστιν;"), ["τίς", "ἐστιν;"]);
+    assert.deepEqual(groups("ἄνθρωπός τις ἦλθεν"), ["ἄνθρωπός+τις", "ἦλθεν"]);
+  });
+
+  test("a group still never crosses phrase-final punctuation", () => {
+    assert.deepEqual(groups("φίλε! καὶ σύ"), ["φίλε!", "καὶ+σύ"]);
+  });
+});
+
+describe("stress density applies without phrasing", () => {
+  // With phrasing off this used to return early, so every density produced the
+  // same fully accented string and the control did nothing.
+  const line = "Χαῖρε, ὦ φίλε! Ποῖ βαδίζεις;";
+  const opts = (stressDensity: "all" | "phrase" | "none") =>
+    convertToSpokenForm(line, { phrasing: false, preserveAccents: true, stressDensity });
+  const marks = (s: string) => (s.normalize("NFD").match(/\u0301/g) || []).length;
+
+  test("the three densities differ", () => {
+    assert.equal(new Set([opts("all"), opts("phrase"), opts("none")]).size, 3);
+  });
+
+  test("none strips every mark, all keeps the most", () => {
+    assert.equal(marks(opts("none")), 0);
+    assert.ok(marks(opts("all")) > marks(opts("phrase")), opts("all"));
+  });
+});
+
+describe("homographs the bare-form lists would otherwise conflate", () => {
+  const g = (t: string) => groupPhonologicalWords(t).map((x) => x.words.join("+"));
+
+  // Membership alone is too blunt for these: binding a noun or a verb as
+  // though it were a particle is worse than leaving a particle unbound.
+  test("ἆρα opens a question; ἄρα is the postpositive", () => {
+    assert.equal(isProsodicallyWeak("ἆρα"), false);
+    assert.equal(isProsodicallyWeak("ἄρα"), true);
+    // and it keeps its own stress mark
+    assert.ok(
+      convertToSpokenForm("Ἆρα οὖν", { preserveAccents: true, stressDensity: "all" }).includes("Á"),
+      convertToSpokenForm("Ἆρα οὖν", { preserveAccents: true, stressDensity: "all" })
+    );
+  });
+
+  test("ἀλλά is the conjunction; ἄλλα is a noun", () => {
+    assert.equal(isProsodicallyWeak("ἀλλά"), true);
+    assert.equal(isProsodicallyWeak("ἄλλα"), false);
+    assert.deepEqual(g("ἄλλα λέγει"), ["ἄλλα", "λέγει"]);
+  });
+
+  test("a word already gated by the unaccented rule is not re-listed", () => {
+    // Listing "ει" among the weak proclitics bound εἶ ("you are") to its
+    // complement exactly as though it were εἰ ("if").
+    assert.equal(isProsodicallyWeak("εἰ"), true);
+    assert.equal(isProsodicallyWeak("εἶ"), false);
+    assert.deepEqual(g("εἶ σοφός"), ["εἶ", "σοφός"]);
+    assert.equal(isProsodicallyWeak("ἡ"), true);
+    assert.equal(isProsodicallyWeak("ἤ"), false);
+  });
+});
+
+describe("seams", () => {
+  test("an aspirate meeting a rough breathing writes one h, not two", () => {
+    // οὐχ is aspirated *because* of the following rough breathing.
+    assert.equal(convertToSpokenForm("οὐχ αὑτὴ", { phrasing: true }), "ookhauteh");
+  });
+
+  test("a long-vowel digraph keeps the following h", () => {
+    // "eh"/"oh" are vowels; dropping their h would delete the vowel itself.
+    assert.ok(convertToSpokenForm("τῇ ἡμέρᾳ", { phrasing: true }).includes("hehmera"));
+  });
+});
+
+describe("a group is never left entirely without prominence", () => {
+  const eras = (t: string) =>
+    convertToSpokenForm(t, { phrasing: true, preserveAccents: true, stressDensity: "all" });
+  const marked = (s: string) => /[́]/.test(s.normalize("NFD"));
+
+  // An oxytone content word takes a grave before a following word, so the
+  // subject of a clause could end up with no prominence at all.
+  test("a grave is promoted when nothing else in the group can be marked", () => {
+    // Normalised: the transcriber emits a combining acute, so a composed
+    // literal here would differ by encoding while looking identical.
+    const nfc = (t: string) => eras(t).normalize("NFC");
+    assert.equal(nfc("ὁ Ζεὺς"), "hozéus".normalize("NFC"));
+    assert.equal(nfc("οὐχ αὑτὴ"), "ookhautéh".normalize("NFC"));
+  });
+
+  test("the grave stays unmarked when a live accent is present", () => {
+    // The long-standing rule is unchanged wherever it has an alternative.
+    assert.equal(eras("τὸν λόγον").normalize("NFC"), "tonlógon".normalize("NFC"));
+    assert.ok(!marked("to"), "sanity");
+  });
+
+  test("an all-weak group stays silent — there is nothing to promote", () => {
+    assert.equal(eras("ἐπεὶ δὲ"), "epeide");
+  });
+
+  test("only one word is rescued, the rightmost", () => {
+    const out = eras("ὁ Ζεὺς");
+    assert.equal((out.normalize("NFD").match(/́/g) || []).length, 1, out);
+  });
+});
+
+describe("elision marks, all of them", () => {
+  const g = (t: string) => groupPhonologicalWords(t).map((x) => x.words.join("+"));
+
+  // The set was written out four times across the codebase and had drifted:
+  // every copy listed U+1FBD KORONIS, none listed U+1FBF PSILI, which is
+  // visually near-identical and just as common. `Ἆρ᾿ οἶσθα` was not recognised
+  // as elided, and the bare mark reached the speech engine.
+  test("every elision mark fuses the word with what follows", () => {
+    for (const mark of ["'", "’", "᾽", "᾿", "ʼ"]) {
+      assert.deepEqual(g(`Ἆρ${mark} οἶσθα`), [`Ἆρ${mark}+οἶσθα`], `mark U+${mark.codePointAt(0)!.toString(16)}`);
+    }
+  });
+
+  test("the mark never reaches the transcription", () => {
+    for (const mark of ["'", "’", "᾽", "᾿", "ʼ"]) {
+      const out = convertToSpokenForm(`Ἆρ${mark} οἶσθα`, { phrasing: true });
+      assert.ok(!out.includes(mark), `${mark} survived: ${out}`);
+    }
+  });
+});
+
+describe("a form that is both proclitic and enclitic reads as proclitic", () => {
+  const g = (t: string) => groupPhonologicalWords(t).map((x) => x.words.join("+"));
+
+  test("οὐ leans forward onto what it negates, not back onto the noun", () => {
+    // `βασιλεὺς οὐ μόνον` fused all three, dragging the negative backwards.
+    assert.deepEqual(g("βασιλεὺς οὐ μόνον"), ["βασιλεὺς", "οὐ+μόνον"]);
+  });
+
+  test("an unambiguous enclitic still leans back", () => {
+    assert.deepEqual(g("ἄνθρωπός τις"), ["ἄνθρωπός+τις"]);
+    assert.deepEqual(g("λέγε μοι"), ["λέγε+μοι"]);
+    assert.deepEqual(g("σοφός ἐστιν"), ["σοφός+ἐστιν"]);
   });
 });

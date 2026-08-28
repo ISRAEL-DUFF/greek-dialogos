@@ -1,3 +1,4 @@
+import { isElisionMark } from "./elision.js";
 /**
  * Reconstructed Attic IPA transcription.
  *
@@ -29,7 +30,8 @@
  * invented glide; and the circumflex recovers the length of α ι υ.
  */
 
-import { groupPhonologicalWords } from "./phrasing.js";
+import { StressDensity } from "./phoneticConverter.js";
+import { groupPhonologicalWords, isProsodicallyWeak, PhraseGroup } from "./phrasing.js";
 
 const ROUGH = "̔";
 const SMOOTH = "̓";
@@ -41,6 +43,14 @@ const IOTA_SUB = "ͅ";
 const DIAERESIS = "̈";
 
 const STRESS = "ˈ"; // ˈ primary stress, precedes the syllable
+
+/** Sentence-final punctuation. Mirrors the Erasmian transcriber exactly. */
+const PHRASE_FINAL = /[.;·;!?]$/;
+
+/** Remove every stress mark from a transcribed chunk. */
+function stripStress(ipa: string): string {
+  return ipa.split(STRESS).join("");
+}
 const LONG = "ː"; // ː
 const NONSYL = "̯"; // ̯ marks the second element of a diphthong
 
@@ -100,6 +110,8 @@ interface Segment {
   ipa: string;
   isVowel: boolean;
   accented: boolean;
+  /** Punctuation passed through verbatim. Not part of any syllable. */
+  isPunct?: boolean;
 }
 
 function isMark(ch: string): boolean {
@@ -112,7 +124,7 @@ function isMark(ch: string): boolean {
  * positioned by structure instead of by counting characters — the arithmetic
  * that misplaced the accent in every implementation that tried it.
  */
-function wordToSegments(word: string): Segment[] {
+function wordToSegments(word: string, markGrave = false): Segment[] {
   const nfd = word.normalize("NFD");
   const chars = Array.from(nfd);
 
@@ -143,7 +155,7 @@ function wordToSegments(word: string): Segment[] {
       if (DIPHTHONGS[pair]) {
         if (next.marks.includes(ROUGH)) roughBreathing = true;
         const accented =
-          hasStress(marks) || hasStress(next.marks);
+          hasStress(marks, markGrave) || hasStress(next.marks, markGrave);
         segments.push({ ipa: DIPHTHONGS[pair], isVowel: true, accented });
         i++;
         continue;
@@ -166,7 +178,7 @@ function wordToSegments(word: string): Segment[] {
       // classical Attic. Voiced here rather than dropped — the Latin scheme
       // drops it, which makes λόγῳ and λόγω identical.
       if (marks.includes(IOTA_SUB)) ipa += "i" + NONSYL;
-      segments.push({ ipa, isVowel: true, accented: hasStress(marks) });
+      segments.push({ ipa, isVowel: true, accented: hasStress(marks, markGrave) });
       continue;
     }
 
@@ -190,17 +202,21 @@ function wordToSegments(word: string): Segment[] {
 
     // The elision apostrophe marks a vowel that is not there; it is
     // orthography, not sound, and must not reach the synthesiser.
-    if (ch === "'" || ch === "\u2019" || ch === "\u1FBD" || ch === "\u02BC") continue;
+    if (isElisionMark(ch)) continue;
 
     // Other punctuation passes through — it drives pausing.
-    segments.push({ ipa: ch, isVowel: false, accented: false });
+    segments.push({ ipa: ch, isVowel: false, accented: false, isPunct: true });
   }
 
   if (roughBreathing) {
-    const first = segments[0];
+    // Before the first *sound*, not before the token. Unshifting to index 0 put
+    // the aspiration outside any leading punctuation — «ὁ became h«o.
+    let at = 0;
+    while (at < segments.length && segments[at].isPunct) at++;
+    const first = segments[at];
     // ῥ already carries its aspiration as devoicing.
     if (!(first && first.ipa === "r̥")) {
-      segments.unshift({ ipa: "h", isVowel: false, accented: false });
+      segments.splice(at, 0, { ipa: "h", isVowel: false, accented: false });
     }
   }
 
@@ -212,11 +228,23 @@ function wordToSegments(word: string): Segment[] {
  * suppressed before a following word — the one syllable that should not be
  * emphasised.
  */
-function hasStress(marks: string[]): boolean {
+function hasStress(marks: string[], includeGrave = false): boolean {
   return (
     marks.includes(ACUTE) ||
     marks.includes(CIRCUMFLEX) ||
-    marks.includes(CIRCUMFLEX_TILDE)
+    marks.includes(CIRCUMFLEX_TILDE) ||
+    (includeGrave && marks.includes(GRAVE))
+  );
+}
+
+/** A word whose only accent is a grave. */
+export function hasGraveOnly(word: string): boolean {
+  const nfd = word.normalize("NFD");
+  return (
+    nfd.includes(GRAVE) &&
+    !nfd.includes(ACUTE) &&
+    !nfd.includes(CIRCUMFLEX) &&
+    !nfd.includes(CIRCUMFLEX_TILDE)
   );
 }
 
@@ -234,12 +262,15 @@ function placeStress(segments: Segment[]): string {
 
   let onset = nucleus;
   const prev = segments[nucleus - 1];
-  if (prev && !prev.isVowel) {
+  // Punctuation is not a consonant and cannot be a syllable onset: walking back
+  // over it put the stress mark outside the token, as in ˈ(ybrin.
+  if (prev && !prev.isVowel && !prev.isPunct) {
     onset = nucleus - 1;
     const prev2 = segments[nucleus - 2];
     if (
       prev2 &&
       !prev2.isVowel &&
+      !prev2.isPunct &&
       STOPS.has(prev2.ipa.replace("ʰ", "")) &&
       LIQUID_OR_NASAL.has(prev.ipa)
     ) {
@@ -252,15 +283,46 @@ function placeStress(segments: Segment[]): string {
     .join("");
 }
 
+/**
+ * The word that should carry a group's mark when nothing in it has a live
+ * accent, or -1 when the group is legitimately unmarked. Rightmost, because
+ * nuclear prominence falls late. Mirrors the Erasmian transcriber.
+ */
+function graveRescueIndex(words: string[]): number {
+  const eligible = words.filter((w) => !isProsodicallyWeak(w));
+  if (eligible.some((w) => convertWordToIPA(w).includes(STRESS))) return -1;
+  for (let i = words.length - 1; i >= 0; i--) {
+    if (!isProsodicallyWeak(words[i]) && hasGraveOnly(words[i])) return i;
+  }
+  return -1;
+}
+
 /** Transcribe a single word to IPA. */
-export function convertWordToIPA(word: string): string {
+export function convertWordToIPA(
+  word: string,
+  // An object, not a positional boolean: `words.map(convertWordToIPA)` would
+  // otherwise pass the array index as the flag and mark every word after the
+  // first. The compiler catches the object form; it cannot catch a number
+  // arriving where a boolean is expected from map.
+  options: { markGrave?: boolean } = {}
+): string {
   if (!word) return "";
-  return placeStress(wordToSegments(word));
+  return placeStress(wordToSegments(word, options.markGrave === true));
 }
 
 export interface IPAOptions {
   /** Group proclitics and enclitics with their hosts. Default true. */
   phrasing?: boolean;
+  /**
+   * How many words carry a stress mark. Default "all", which is the marking
+   * this converter has always produced.
+   *
+   * Reconstructed Attic had a pitch accent rather than a stress accent, so ˈ
+   * here stands for the accented syllable, not for emphasis. Thinning the marks
+   * asks the engine to stop hammering every word; it does not assert that the
+   * accent was absent.
+   */
+  stressDensity?: StressDensity;
 }
 
 /**
@@ -275,16 +337,46 @@ export interface IPAOptions {
 export function convertToIPAForm(text: string, options: IPAOptions = {}): string {
   if (!text) return "";
   const usePhrasing = options.phrasing !== false;
+  const density: StressDensity = options.stressDensity ?? "all";
 
-  if (!usePhrasing) {
-    return text
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(convertWordToIPA)
-      .join(" ");
+  const groups: PhraseGroup[] = usePhrasing
+    ? groupPhonologicalWords(text)
+    : text.split(/\s+/).filter(Boolean).map((w) => ({ words: [w], join: "none" as const }));
+
+  // Transcribe first, then thin the marks. Deciding stress on the Greek and
+  // deciding it on the IPA must not diverge, so there is one selection here and
+  // the transcriber stays unaware of density.
+  const rendered = groups.map((group) => {
+    // An oxytone content word takes a grave before a following word, so `ὁ Ζεὺς`
+    // came out as `hozdeu̯s` — the clause's subject with no prominence at all.
+    // Where a group has no live accent to mark, promote its rightmost grave;
+    // suppression is relative, not absolute.
+    const rescue = graveRescueIndex(group.words);
+    return group.words
+      .map((w, i) =>
+        isProsodicallyWeak(w)
+          ? stripStress(convertWordToIPA(w))
+          : convertWordToIPA(w, { markGrave: i === rescue })
+      )
+      .join(usePhrasing ? "" : " ");
+  });
+
+  if (density === "all") return rendered.join(" ");
+  if (density === "none") return rendered.map(stripStress).join(" ");
+
+  // "phrase": one mark per intonational phrase, on its last markable group.
+  const keep = new Array<boolean>(rendered.length).fill(false);
+  let start = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const last = groups[i].words[groups[i].words.length - 1];
+    if (!PHRASE_FINAL.test(last) && i !== groups.length - 1) continue;
+    for (let j = i; j >= start; j--) {
+      if (rendered[j].includes(STRESS)) {
+        keep[j] = true;
+        break;
+      }
+    }
+    start = i + 1;
   }
-
-  return groupPhonologicalWords(text)
-    .map((group) => group.words.map(convertWordToIPA).join(""))
-    .join(" ");
+  return rendered.map((r, i) => (keep[i] ? r : stripStress(r))).join(" ");
 }

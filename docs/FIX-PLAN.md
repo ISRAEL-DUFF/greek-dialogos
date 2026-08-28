@@ -1327,3 +1327,622 @@ Worth recording, because it changes how the rest of this plan should be read.
 The first draft of this document was written by reading the code. It correctly identified structural problems — the dead endpoint, the playback race, the uncancellable pre-cache — but it was **wrong about the severity and the cause of the single most important bug**. It diagnosed TTS as producing noise via a decoder mismatch, and proposed a decoder rewrite. The real defect was a rejected request parameter, the decoder was already correct, and the app was not degraded but entirely non-functional. It also missed the dead LLM model completely, because a decommissioned model id is indistinguishable from a live one by inspection.
 
 Ten minutes of `curl` against the live API changed one P0, closed another, added a new one, and deleted a substantial piece of proposed work. **Verify external dependencies before planning around them.**
+
+---
+
+## Wrong audio on a line — two defects found
+
+Reported as "the audio on the last sentence is not what the Greek says".
+
+### Defect A — the decoded-buffer cache key collapsed to the byte length
+
+`audioPlayer.ts` keyed its in-memory decode cache as:
+
+```ts
+const cacheKey = `${base64Data.slice(0, 48)}_${base64Data.length}`;
+```
+
+Measured across 8 real clips: every clip returned by the speech engine opens
+with **214–526 bytes of digital silence**. 48 base64 characters cover only 36
+bytes, so all 8 shared a byte-identical `AAAA…A` prefix. The key was therefore
+**the byte length alone**.
+
+Clip lengths are quantised to 640-byte frames, so two lines needed only to land
+within ~13ms of each other to collide — at which point the second line was
+handed the first line's decoded buffer and spoke the wrong text. Later lines
+were the likeliest victims, having more earlier clips to collide with, which
+matches the report exactly.
+
+**Fix.** Playback passes the durable cache key as an explicit identity — it is
+unique by construction and free to compute. Callers with no natural key (word
+gloss, TTS Studio) fall back to a content hash over the whole string, which is
+O(n) across roughly a megabyte and costs a few milliseconds per decode.
+
+Regression test: `tests/audioFingerprint.test.ts` asserts the old key collided
+on same-length clips and that the new one does not, including a 40-clip sweep.
+
+### Defect B — export dropped the pronunciation variant
+
+`AudioRecord` never stored `variant` as a field; it existed only inside the
+composite key string. `getModuleAudioMap` reads *records*, so every export
+silently lost it, and `importModuleAudioMap` rebuilt keys with no variant
+argument — landing every imported clip under the legacy no-variant key, where
+no current setting will ever look for it.
+
+**Fix.** `variant` is now a field on the record and written on every cache.
+`variantOf()` recovers it from the key for records written before the field
+existed, so old exports and existing caches round-trip correctly.
+
+### Confirmed against the reported module
+
+The export was moved to `docs/` and read. Defect A reproduces exactly.
+
+All six clips share one 48-character prefix (they open with 168–466 bytes of
+silence), so the key was the byte length alone. Two lines share a length:
+
+| line | speaker | bytes | b64 length | old key |
+|---|---|---|---|---|
+| 2 | Ἐρυξίμαχος | 382080 | 509440 | `AAAA…A_509440` |
+| 6 | Ἀριστοφάνης | 382080 | 509440 | `AAAA…A_509440` |
+
+Both are 7.96s to the byte; their content differs (six distinct SHA-256s). Line
+6 is the last line of the dialogue, and it was served line 2's decoded buffer —
+the reported symptom, reproduced from the user's own data. Under the new key the
+two separate (`2cmkvu1uj3vxx_509440` / `1d343kz16zic9_509440`), verified against
+these clips.
+
+**Ruled out.** Line ids in this module are unique (1–6), so the `server.ts`
+uniqueness gap played no part. It remains a latent hardening issue, not a cause
+of this bug.
+
+### Note on the third candidate
+
+`server.ts` assigns `id: line.id ?? idx + 1` on import with no uniqueness check,
+so a module whose generated lines carried duplicate ids would produce identical
+durable cache keys. This module does not, so the defect is unexercised here and
+was left alone rather than fixed speculatively alongside a confirmed cause.
+
+This export predates Defect B's fix, so its clips carry no variant and import
+under the legacy key — they will re-synthesize once on first play. Exports
+written from now on round-trip.
+
+---
+
+## Prosodic binding, and two inert stress controls
+
+### The sentence that exposed the gap
+
+```
+Ἐρυξίμαχε πρῶτον μὲν δεῖ ὑμᾶς μαθεῖν τὴν ἀνθρωπίνην φύσιν καὶ τὰ παθήματα αὐτῆς
+```
+
+Thirteen words in, thirteen groups out — connected speech was a complete no-op,
+and on Reconstructed the on/off outputs were byte-identical.
+
+Every word carries an accent mark, and the grouping rule was "in the clitic list
+**and** unaccented". That rule is right for clitics *proper*, and it is what
+keeps τίς apart from τις. But "not a clitic" is not "not bound": μὲν, τὴν, καὶ
+and τὰ are prosodically weak and lean on a neighbour in speech whatever the page
+shows. Four of them carry a **grave**, which is precisely the mark for an accent
+*suppressed in context*.
+
+Keying on the grave alone would have been too narrow — τοῦ and τῷ are weak too
+and carry a circumflex — so membership is the test for this class. It therefore
+stays a **closed list**, and the clitic lists keep their unaccented requirement.
+Relaxing that test there would undo τίς / τις.
+
+**Added.** `WEAK_PROCLITICS` (the whole article paradigm, prepositions, καί and
+other coordinators, the negatives) bind forward; `POSTPOSITIVES` (μέν, δέ, γάρ,
+οὖν, δή …) bind back. Both regardless of accent.
+
+```
+before:  Ἐρυξίμαχε | πρῶτον | μὲν | δεῖ | ὑμᾶς | μαθεῖν | τὴν | ἀνθρωπίνην |
+         φύσιν | καὶ | τὰ | παθήματα | αὐτῆς                        (13)
+after:   Ἐρυξίμαχε | πρῶτον‿μὲν | δεῖ | ὑμᾶς | μαθεῖν |
+         τὴν‿ἀνθρωπίνην | φύσιν | καὶ‿τὰ‿παθήματα | αὐτῆς            (9)
+```
+
+Full noun phrases (`τὴν ἀνθρωπίνην φύσιν` as one unit) would need syntax; the
+article binds to its immediate neighbour and stops there.
+
+### Weak words no longer take the stress mark
+
+`téhn anthrohpínehn` puts the prominence on the article. `canTakeStress` now
+excludes every prosodically weak word, in both transcribers, and the nuclear
+stress search skips groups whose only accented word is weak.
+
+### Two inert controls
+
+**Reconstructed ignored stress density entirely.** `server.ts` called
+`convertToIPAForm(text, { phrasing })` and the converter had no such option, so
+all three settings produced identical IPA. Implemented with the same semantics as
+Erasmian, defaulting to `all` — the marking it has always produced.
+
+Reconstructed Attic had a pitch accent, not a stress accent, so `ˈ` marks the
+accented syllable rather than emphasis. Thinning the marks asks the engine to
+stop hammering every word; it does not claim the accent was absent.
+
+**Erasmian ignored it whenever connected speech was off.** `convertToSpokenForm`
+returned early on `phrasing: false`, down a path that honours `preserveAccents`
+but not `stressDensity`. Word-by-word now runs through the same pipeline with
+singleton groups.
+
+### Cache generation
+
+Improving a transcriber leaves every cached clip keyed as though it were current
+— the same fault class as a colliding key, only slower to notice. `settingsVariant`
+now appends a `TRANSCRIBER_GENERATION`, bumped to `2`.
+
+**Modern is deliberately excluded.** It is passed through untranscribed, so none
+of this changed a byte of its output, and churning its cache would spend real
+credits on identical audio. Erasmian and Reconstructed re-render once.
+
+### Verified matrix
+
+| control | Modern | Erasmian | Reconstructed |
+|---|---|---|---|
+| Connected speech | n/a by design | yes | yes |
+| Stress marking | n/a by design | yes, phrasing on **or** off | yes |
+
+The settings panel now disables both on Modern and says why, rather than showing
+live controls that do nothing.
+
+161 tests pass. Known limits left alone: full-NP binding needs syntax; `ου`,
+`οι`, `εις` remain genuinely ambiguous and keep the proclitic reading; Modern's
+variant still folds in flow and stress, so toggling them re-renders identical
+Modern audio — harmless, and fixing it would invalidate existing Modern caches.
+
+### Homographs the bare-form lists conflated
+
+Testing three further Symposium sentences exposed a hazard created by the weak
+lists themselves. The clitic lists match on *bare form plus unaccented*; the weak
+lists match on bare form alone, and several bare forms collide with ordinary
+content words. Binding a noun or a verb as though it were a particle is a worse
+error than leaving a particle unbound.
+
+| spelling | is | was treated as | now |
+|---|---|---|---|
+| ἆρα | opens a question | postpositive ἄρα | full word |
+| ἄρα | inferential postpositive | — | postpositive |
+| ἀλλά | conjunction "but" | — | weak |
+| ἄλλα | "other things", a noun | conjunction | full word |
+| εἰ | "if" | — | proclitic |
+| εἶ | "you are", a **verb** | proclitic εἰ | full word |
+| ἡ | article | — | proclitic |
+| ἤ | "or" | article | full word |
+
+Visible in the reported sentence: `Ἆρα οὖν` transcribed as `Araoon`, the
+interrogative stripped of its accent. `εἶ σοφός` fused a verb to its complement.
+
+Two distinct causes, two fixes:
+
+**Re-listing words the unaccented rule already handled.** εἰ, ὡς, ἐν, εἰς, ἐκ,
+ἐξ, οὐ, οὐκ, οὐχ, ὁ, ἡ, οἱ, αἱ were copied into `WEAK_PROCLITICS`, which matches
+regardless of accent — destroying the very distinction `PROCLITICS` exists to
+draw. They are unaccented already, so they were never the problem. Removed; the
+weak list now holds only words that *carry* an accent.
+
+**Genuine homographs that differ by accent shape or position.** As with τίς /
+τις, the orthography records the difference — here in which accent and where:
+ἄρα (acute) against ἆρα (circumflex), ἀλλά (oxytone) against ἄλλα (paroxytone).
+`ACCENT_SENSITIVE` holds one predicate per such form, and `accentOnLastVowel`
+separates oxytone from paroxytone without needing full syllabification.
+
+### A seam that wrote one sound twice
+
+`οὐχ αὑτὴ` gave `ookhhauteh`. `fusionWouldDistort` guarded h + vowel but not
+h + h, so the aspirate of οὐχ and the rough breathing of αὑτή both survived —
+though the χ is aspirated *because* of that breathing. Now `ookhauteh`.
+
+Restricted to the aspirate digraphs kh/th/ph: "eh" and "oh" are long vowels, and
+dropping their h would delete the vowel. Predates the phrasing work.
+
+### Result on the three sentences
+
+| sentence | words | groups |
+|---|---|---|
+| Ἡ γὰρ πάλαι ἡμῶν φύσις … | 18 | 13 |
+| Ἆρα οὖν διὰ τὴν ὕβριν … | 11 | 7 |
+| Πάνυ μὲν οὖν ἐπεὶ δὲ … | 16 | 10 |
+
+`Πάνυ‿μὲν‿οὖν`, `Ἆρα‿οὖν`, `ἐπεὶ‿δὲ`, `διὰ‿τὴν‿ὕβριν`, `ὁ‿Ζεὺς`,
+`τοῦ‿ἀνθρώπου` all bind correctly. `νῦν` correctly stays free — it is accented,
+so it is not the enclitic νυν, which is the original accent test still working.
+
+166 tests pass.
+
+---
+
+## The grave could leave a group with no prominence
+
+An oxytone content word takes a **grave** before a following word, and the
+transcribers treat the grave as an accent Greek suppresses — correctly, since
+marking it would place stress exactly where the language removes it.
+
+But suppression is relative, not absolute, and where the whole group had nothing
+else to mark the result was a flat group:
+
+```
+ὁ Ζεὺς      ->  hozeus     hozdeu̯s     the clause subject, no prominence
+οὐχ αὑτὴ    ->  ookhauteh  uːkʰhau̯tɛː
+```
+
+### Measured before changing anything
+
+84 groups across the reported module and the three Symposium sentences, at
+stress density "all":
+
+| | before | after |
+|---|---|---|
+| groups with no mark | 9 (11%) | 5 (6%) |
+| — all words weak, correctly unmarked | 2 | 4 |
+| — **a content word silenced by its grave** | **6** | **0** |
+| — other | 1 | 1 |
+
+### The rule
+
+A group promotes its **rightmost** grave-bearing content word, and only when no
+word in it carries a live accent. Nuclear prominence falls late, so rightmost.
+
+The long-standing behaviour is untouched wherever an alternative exists:
+`τὸν λόγον` is still `tonlógon`, never `tónlógon`. An all-weak group stays
+silent — there is nothing there that should be prominent.
+
+Implemented in both transcribers (`graveRescueIndex`), behind a `markGrave`
+option that is off by default.
+
+`ἐπεί`, `ἐπειδή`, `ὅτε`, `ὥστε`, `ὅπως`, `ἕως` joined the weak subordinators in
+the same pass. `ἐπεὶ δὲ` was being counted as a content word needing rescue when
+it is in fact two function words, and is now correctly silent.
+
+### One footgun caught by the compiler
+
+`convertWordToIPA(word, markGrave)` as a positional boolean meant any
+`words.map(convertWordToIPA)` would pass the array index as the flag and mark
+every word after the first. Changed to an options object, which the compiler can
+reject. An existing test was doing exactly that map.
+
+Cache generation bumped to **3**. Modern remains excluded — still untranscribed,
+still byte-identical.
+
+173 tests pass.
+
+### Not verified
+
+The measurement above counts stress marks in the transcription, not anything
+heard. Whether promoting the grave audibly improves delivery has not been tested
+against generated speech — an earlier lesson in this document is that a
+character-level yardstick once pointed the opposite way from the real audio.
+
+---
+
+## Punctuation was missing from everything the reader sees
+
+Reported as "I hardly see punctuation in the sentences".
+
+### Where it was, and where it was not
+
+| stage | punctuation |
+|---|---|
+| generation (`greekText`) | present and correct on all 6 lines |
+| Erasmian transcription | preserved |
+| Reconstructed transcription | preserved |
+| TTS request | preserved — it sends `greekText` |
+| **`words[]`** | **absent** |
+| **every reading view** | **absent — they render `words[]`** |
+
+The audio path was never affected. The generator is asked for
+`greek: "Individual Greek word"` per entry, and strips punctuation — reasonably,
+since that field also feeds dictionary lookup and the gloss. But
+`DialogueCard` and all three `BookFormatView` layouts render `line.words`, so
+the text on the page had lost every comma, ano teleia and question mark:
+
+```
+shown:   Πάνυ μὲν οὖν ἐπεὶ δὲ τὸ σῶμα δίχα ἐτμήθη ποθοῦν ἕκαστον
+actual:  Πάνυ μὲν οὖν· ἐπεὶ δὲ τὸ σῶμα δίχα ἐτμήθη, ποθοῦν ἕκαστον
+```
+
+On a text where the question mark is a semicolon and the ano teleia marks a
+clause break, that is a real loss for a reader. Line 4 is a question whose `;`
+never reached the page.
+
+### The fix
+
+`greekText` already holds the punctuation, so nothing needs regenerating and no
+prompt changed. `wordAffixes()` aligns the two and returns the punctuation to
+print around each word; the word itself stays clean, so lookup, gloss and audio
+are untouched.
+
+Alignment was verified before relying on it — all six lines matched token for
+token. When a line cannot be aligned confidently, **every affix comes back
+empty** and the view renders exactly what it renders today. A wrong comma is
+worse than a missing one.
+
+The elision apostrophe is treated as an affix rather than punctuation, so the
+page shows `ἀλλ’` while lookup still receives `ἀλλ`.
+
+Applied to the four running-text views. Deliberately **not** applied to the
+vocabulary chip grid in `DialogueCard`, which lists words rather than prose.
+
+Confirmed against the reported module: all six lines now render byte-identical
+to `greekText`.
+
+### A latent crash closed on the way
+
+`affixesFor(line)[wIdx]` returns `WordAffix`, not `WordAffix | undefined`,
+without `noUncheckedIndexedAccess` — so the empty-array fallback would have
+thrown on `.before`. Guarded with an exported `EMPTY_AFFIX`.
+
+182 tests pass.
+
+### Still open
+
+`contextNote` is declared in the generation schema but is **not** in its
+`required` list, and no line in the reported module carries one. The contextual
+delivery feature reads it, so half of that feature is inert on generated
+modules — it falls back to speaker identity and turn-taking, which do work.
+
+---
+
+## Is punctuation stripped before transcription? — audited
+
+Asked directly, and the earlier answer had been based on calling the converters
+rather than the path the server actually takes. Re-checked properly.
+
+### Method
+
+The server's expression, verbatim:
+
+```ts
+const phoneticText = useModern ? text
+  : useIPA ? convertToIPAForm(text, { phrasing, stressDensity })
+  : convertToSpokenForm(text, { phrasing, preserveAccents: accents, stressDensity });
+```
+
+Ten sentences — including punctuation in awkward places (a comma splitting a
+group that would otherwise bind, doubled `;;`, parentheses, guillemets, em
+dashes, elision) — across 2 schemes x 2 phrasing x 3 densities = **120 checks**,
+comparing the full ordered punctuation sequence of input against output.
+
+### Result: not stripped
+
+117 of 120 identical. The 3 exceptions were the *test's* expectation being
+wrong: with `phrasing: false` there is no seam to join across, so the elision
+apostrophe in `ἀλλ’ οὐ` survives as `all’ oo` rather than being absorbed into
+`alloo`. Deliberate in the phrasing path, incidental in the other.
+
+The only place punctuation is removed anywhere in the pipeline is `bareWord()`,
+which strips it for lexical lookup — never for output.
+
+### But the audit found a real defect
+
+Reconstructed misplaced sounds around *leading* punctuation:
+
+```
+(ὁ      ->  h(o       the aspiration outside the parenthesis
+«ὁ      ->  h«o
+(ὕβριν  ->  hˈ(ybrin  aspiration and stress mark both escaped
+```
+
+Two causes, both in `ipaConverter`:
+
+- the rough breathing was `unshift`ed to index 0 — before the *token*, not
+  before the first sound;
+- `placeStress` walked back from the accented nucleus over any non-vowel
+  segment, and punctuation is not a vowel, so the mark landed outside the token.
+
+Segments now carry `isPunct`. The aspiration is spliced in before the first
+non-punctuation segment, and the onset search stops at punctuation. Erasmian was
+never affected — it tokenises differently.
+
+```
+(ὁ      ->  (ho
+(ὕβριν  ->  (ˈhybrin
+ὁ Ζεὺς (ὁ πατήρ) ἔτεμεν.  ->  hoˈzdeu̯s (ho paˈtɛːr) ˈetemen.
+```
+
+Cache generation bumped to **4**.
+
+## contextNote is now required
+
+It was declared in the generation schema but absent from its `required` list, so
+generated modules omitted it and contextual delivery fell back to speaker
+identity alone. Added to `required`, and the description now asks what the line
+is *doing* in the exchange — asking, conceding, objecting — rather than only
+naming a grammatical feature.
+
+187 tests pass.
+
+---
+
+## `Ἆρ᾿ οἶσθα` — an elision mark nobody recognised
+
+The first word of
+
+```
+Ἆρ᾿ οἶσθα, ὦ Ἀλέξανδρε, ὅτι ὁ ἀγαθὸς βασιλεὺς οὐ μόνον δυνάμει ἀλλὰ καὶ φιλίᾳ ἄρχει τῶν πολιτῶν;
+```
+
+is elided ἆρα, and its mark is **U+1FBF GREEK PSILI**. The elision set listed
+U+1FBD GREEK KORONIS — visually near-identical, a different codepoint.
+
+```
+psili    (as written)  Ἆρ᾿ | οἶσθα   ->  Ár᾿ óistha     ˈaːr᾿ ˈoi̯stʰa
+koronis                Ἆρ᾽‿οἶσθα     ->  Áróistha       ✓
+```
+
+Two failures at once: the words never fused, and the bare `᾿` was passed
+through to the speech engine.
+
+### Why it was missed
+
+The set was written out **four times** — in `phrasing`, both transcribers and
+the word-display alignment — and the copies had drifted. All four listed the
+koronis; none listed the psili.
+
+Now defined once in `elision.ts`, with U+2018 added as well, and imported by all
+four. The duplication was the bug, not the missing character.
+
+### The same sentence exposed a second defect
+
+`βασιλεὺς οὐ μόνον` fused all three words, dragging the negative **backwards**
+onto the noun. οὐ is in both clitic lists, and `AMBIGUOUS_CLITICS` documents
+that the proclitic reading should win — but that constant was exported and
+**never referenced**. The enclitic branch fired first, since it tests `next`
+while the proclitic branch tests `tail`.
+
+The enclitic branch now declines a word that also reads as a proclitic:
+
+```
+before  βασιλεὺς‿οὐ‿μόνον
+after   βασιλεὺς | οὐ‿μόνον
+```
+
+Unambiguous enclitics are unaffected: `ἄνθρωπός‿τις`, `λέγε‿μοι`,
+`σοφός‿ἐστιν` all still bind.
+
+### Result
+
+```
+Ἆρ᾿‿οἶσθα, | ὦ | Ἀλέξανδρε, | ὅτι‿ὁ‿ἀγαθὸς | βασιλεὺς | οὐ‿μόνον |
+δυνάμει | ἀλλὰ‿καὶ‿φιλίᾳ | ἄρχει | τῶν‿πολιτῶν;
+```
+
+Cache generation bumped to **5**. 191 tests pass.
+
+### Known, not changed
+
+A group fused by elision holds two lexical words, so at stress density "all"
+both are marked: `ˈaːrˈoi̯stʰa` carries two primary stresses, which is
+ill-formed IPA for a single phonological word. Every other join type binds a
+weak word, which takes no mark, so this is specific to elision. Left alone
+because "Every word" says what it does, and the default is "none" — but it is
+the one place where the density setting and IPA notation disagree.
+
+---
+
+## Delivery is prompt-driven, not only transcription-driven
+
+The user rewrote the Erasmian speech prompt by hand and reported that the
+reading "is no longer feeling like reading vocabulary words". That is a finding
+worth recording, because it reframes the whole phrasing effort: fusing words in
+the *text* was necessary but not sufficient. The model also had to be told what
+to do with the result.
+
+The new instruction spells out, explicitly:
+
+- the input is a transliteration, not English;
+- speak it as connected speech, with no pause between individual words;
+- preserve word grouping and sentence rhythm;
+- pause only at punctuation or a real phrase boundary;
+- it is conversational dialogue, not a vocabulary exercise.
+
+### Ported to Reconstructed
+
+Reconstructed still carried the terse one-line prompt, and it has more to gain:
+it feeds the model IPA, which is harder to read fluently than Latin
+transliteration.
+
+The two now spell out the **same delivery, clause for clause**, and differ only
+where the notation forces them to:
+
+| | Erasmian | Reconstructed |
+|---|---|---|
+| what the input is | transliteration | IPA transcription |
+| do not read as English | Latin characters | symbols |
+| how to use it | pronunciation instructions | …realising every symbol exactly — aspiration, vowel length, stress |
+| the five delivery clauses | identical | identical |
+
+Keeping them parallel is what makes the schemes comparable. An earlier version
+asked them for different things, and any difference heard could not be
+attributed to the notation. Modern keeps the short form: it reads its own
+language and never had the problem.
+
+### Cache generation 6 — and why a prompt edit needs one
+
+The prompt is **not** part of `settingsVariant`. Replaying a line already cached
+under the same settings therefore serves its old delivery, and an A/B of a
+prompt edit silently compares nothing. Bumped to `6`, which covers both the
+hand-written Erasmian change and this port. Modern is excluded as always — its
+prompt is unchanged and its audio is byte-identical.
+
+Anyone iterating further on a prompt must bump this, or measure against a fresh
+module id.
+
+### Two notes left alone
+
+The statement now terminates explicitly. It had been relying on automatic
+semicolon insertion, because the `;` ended up inside the commented-out reference
+to the previous wording.
+
+The Erasmian instruction says "reconstructed Ancient Greek", though that branch
+is Erasmian and Reconstructed is the IPA branch above it. The model most likely
+reads it as "historical", and the delivery is reportedly good — but if Erasmian
+ever drifts toward reconstructed vowel values ([y] for υ, distinctive length),
+that word is the first thing to test.
+
+The comment block above the prompts previously documented a measurement — 7%
+shorter for Erasmian, 23% for Reconstructed — taken on the one-word "fluently"
+instruction that two of the three schemes no longer use. Marked as historical
+rather than deleted.
+
+191 tests pass.
+
+---
+
+## Follow-along highlighting is now opt-in, and off by default
+
+Reported: the reading marker lags behind the voice.
+
+### Why it got worse
+
+The highlight was never measured — it is *predicted*. The engine returns audio
+with no timing information, so `calculateWordTimings` estimates each word's
+duration from the shape of its transcription.
+
+Connected speech made that estimate worse rather than better. Once words are
+fused into phonological groups and the engine is explicitly told not to pause
+between them, there are no longer per-word boundaries to predict: the very thing
+that fixed the vocabulary-list reading removed the acoustic landmarks the
+estimator was leaning on.
+
+A marker pointing at the wrong word is worse than no marker, so it is opt-in
+until the timings come from the audio rather than from a guess.
+
+### What was added
+
+`wordHighlight` on `SpeechSettings`, default **false**, persisted with the rest.
+
+Gated at the source, not in the view: when it is off, `playBuffer` receives
+neither the word list nor the change callback, so no timers are scheduled at all.
+Both playback paths — single line and full dialogue — are gated. Switching it off
+mid-session also clears any marker left standing.
+
+**Excluded from `settingsVariant`.** It changes nothing about the audio;
+including it would re-render every cached clip to toggle a visual aid. There is
+a test asserting the variant is identical with it on and off, since that is
+exactly the kind of thing a later edit breaks silently.
+
+The toggle sits in the reading controls beside Loop, not in Speech Settings — it
+is a reading aid, and nothing about it reaches the synthesiser. Its tooltip says
+the timings are estimated and may drift, so the behaviour is not a surprise.
+
+### Verified in the browser
+
+Fresh profile, no stored settings: the control renders **FOLLOW ALONG OFF**.
+After one click, `localStorage.wordHighlight === true` and the button reads ON
+with `aria-pressed="true"` and the active background.
+
+The screenshot taken immediately after the click still showed the inactive
+styling; computed styles showed it was correct. A repeat of a mistake recorded
+earlier in this document — reading the DOM before React has painted — and the
+reason the check was made against computed style rather than the image.
+
+195 tests pass.
+
+### Not done
+
+The real fix is measuring rather than estimating: an amplitude scan of the
+decoded buffer would give actual pause boundaries, which is far more reliable
+now that phrase breaks are the only pauses the engine is asked to make. That is
+a larger piece of work and was not attempted here.

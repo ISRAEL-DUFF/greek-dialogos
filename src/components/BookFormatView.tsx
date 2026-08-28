@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Play, Square, Volume2, BookOpen, Columns, AlignLeft, ZoomIn, ZoomOut, Bookmark, FileText, Check, Sparkles, FastForward, RotateCcw, Repeat } from "lucide-react";
 import { DialogueLine, WordGloss, VoiceName, AncientGreekModule } from "../types";
+import { wordAffixes, WordAffix, EMPTY_AFFIX } from "../utils/wordPunctuation";
 
 export type BookLayoutMode = "parallel" | "folio" | "greek-manuscript";
 export type FontSizeOption = "sm" | "base" | "lg" | "xl";
@@ -46,6 +47,18 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
   const [showStephanusNumbers] = useState(true);
 
   const activeLineRef = useRef<HTMLDivElement | null>(null);
+
+  // `words[]` arrives without punctuation — it doubles as the lookup key — so
+  // the running text is repunctuated from `greekText`, which has it. Computed
+  // once per line rather than inside the word loop.
+  const affixesByLine = useMemo(() => {
+    const map = new Map<number, WordAffix[]>();
+    for (const l of module.lines) map.set(l.id, wordAffixes(l.greekText, l.words));
+    return map;
+  }, [module.lines]);
+  const noAffixes: WordAffix[] = [];
+  const affixesFor = (line: DialogueLine): WordAffix[] =>
+    affixesByLine.get(line.id) ?? noAffixes;
 
   const activeLineIndex = module.lines.findIndex((l) => l.id === activeLineId);
   const activeLine = activeLineIndex >= 0 ? module.lines[activeLineIndex] : null;
@@ -186,6 +199,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                     <div className={`font-serif text-[#2D2A26] ${fontClasses.greek} flex flex-wrap gap-x-2 gap-y-1.5 items-baseline ${!isFirstSpeaker ? 'italic' : ''}`}>
                       {line.words.map((w, wIdx) => {
                         const isWordActive = isActive && activeWordIndex === wIdx;
+                        const affix = affixesFor(line)[wIdx] ?? EMPTY_AFFIX;
                         return (
                           <button
                             key={wIdx}
@@ -197,7 +211,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                             }`}
                             title={`Inspect "${w.greek}" (${w.meaning.split("/")[0]})`}
                           >
-                            {w.greek}
+                            {affix.before}{w.greek}{affix.after}
                           </button>
                         );
                       })}
@@ -289,6 +303,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                   {/* Greek Text */}
                   <div className={`font-serif text-[#2D2A26] ${fontClasses.greek} flex flex-wrap gap-x-2.5 gap-y-1.5 items-baseline leading-relaxed ${!isFirstSpeaker ? 'italic' : ''}`}>
                     {line.words.map((w, wIdx) => {
+                      const affix = affixesFor(line)[wIdx] ?? EMPTY_AFFIX;
                       const isWordActive = isActive && activeWordIndex === wIdx;
                       return (
                         <button
@@ -300,7 +315,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                               : "hover:text-[#8B7355] hover:underline decoration-[#8B7355] decoration-1 underline-offset-4"
                           }`}
                         >
-                          {w.greek}
+                          {affix.before}{w.greek}{affix.after}
                         </button>
                       );
                     })}
@@ -394,6 +409,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                       {/* Greek Line Words */}
                       <div className={`font-serif text-[#2D2A26] ${fontClasses.greek} flex flex-wrap gap-x-2.5 gap-y-1.5 items-baseline leading-relaxed`}>
                         {line.words.map((w, wIdx) => {
+                          const affix = affixesFor(line)[wIdx] ?? EMPTY_AFFIX;
                           const isWordActive = isActive && activeWordIndex === wIdx;
                           return (
                             <button
@@ -406,7 +422,7 @@ export const BookFormatView: React.FC<BookFormatViewProps> = ({
                               }`}
                               title={`Inspect "${w.greek}" (${w.meaning.split("/")[0]})`}
                             >
-                              {w.greek}
+                              {affix.before}{w.greek}{affix.after}
                             </button>
                           );
                         })}

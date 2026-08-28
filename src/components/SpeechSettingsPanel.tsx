@@ -38,6 +38,12 @@ export const SpeechSettingsPanel: React.FC<SpeechSettingsPanelProps> = ({
   const set = <K extends keyof SpeechSettings>(key: K, value: SpeechSettings[K]) =>
     onChange({ ...settings, [key]: value });
 
+  // Modern is handed to the engine as plain Greek — it already knows the
+  // language, and transcribing would only get in its way. Nothing downstream
+  // reads phrasing or stress on this scheme, so showing the controls as live
+  // would promise an effect that never arrives.
+  const transcribed = settings.pronunciation !== "modern";
+
   return (
     <div className="bg-[#FFFFFF] border-2 border-[#2D2A26] p-5 space-y-5">
       <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-2">
@@ -107,11 +113,19 @@ export const SpeechSettingsPanel: React.FC<SpeechSettingsPanelProps> = ({
           Delivery
         </legend>
 
-        <label className="flex items-start gap-2 cursor-pointer">
+        {!transcribed && (
+          <p className="text-[11px] font-sans text-[#8B7355] bg-[#F7F5F0] border border-[#E5E1D8] p-2 leading-relaxed">
+            Modern Greek is read from the Greek itself, so connected speech and stress marking do not
+            apply. Switch to Erasmian or Reconstructed to use them.
+          </p>
+        )}
+
+        <label className={`flex items-start gap-2 ${transcribed ? "cursor-pointer" : "opacity-50"}`}>
           <input
             id="chk-connected-speech"
             type="checkbox"
-            checked={settings.connectedSpeech}
+            disabled={!transcribed}
+            checked={transcribed && settings.connectedSpeech}
             onChange={(e) => set("connectedSpeech", e.target.checked)}
             className="mt-0.5 accent-[#2D2A26]"
           />
@@ -126,7 +140,7 @@ export const SpeechSettingsPanel: React.FC<SpeechSettingsPanelProps> = ({
           </span>
         </label>
 
-        <div>
+        <div className={transcribed ? "" : "opacity-50"}>
           <span className="block font-sans font-bold text-[11px] uppercase tracking-wider text-[#2D2A26] mb-1">
             Stress marking
           </span>
@@ -138,8 +152,11 @@ export const SpeechSettingsPanel: React.FC<SpeechSettingsPanelProps> = ({
               <button
                 key={d}
                 onClick={() => set("stressDensity", d)}
+                disabled={!transcribed}
                 aria-pressed={settings.stressDensity === d}
-                className={`px-2.5 py-1 border text-[10px] uppercase font-sans font-bold tracking-wider cursor-pointer transition-all ${
+                className={`px-2.5 py-1 border text-[10px] uppercase font-sans font-bold tracking-wider transition-all disabled:cursor-not-allowed ${
+                  transcribed ? "cursor-pointer " : ""
+                }${
                   settings.stressDensity === d
                     ? "border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0]"
                     : "border-[#E5E1D8] text-[#5C564E] hover:border-[#2D2A26]"

@@ -269,15 +269,30 @@ function buildSpokenPrompt({
   // "Fluently" alone, not "friendly and fluently": fluency concerns rate and
   // connectedness, while friendliness is an emotional register that risks
   // pulling vowels toward English and softening the aspirates — the same
-  // dilution hazard as contextual delivery. Measured effect of the fluency
-  // wording: about 7% shorter for Erasmian and 23% for Reconstructed, whose
+  // dilution hazard as contextual delivery. Measured effect of that one-word
+  // instruction: about 7% shorter for Erasmian and 23% for Reconstructed, whose
   // apparent slowness turned out to be largely an artifact of carrying the
-  // most demanding instruction.
+  // most demanding notation.
+  //
+  // Erasmian and Reconstructed now carry a fuller instruction than that, so the
+  // measurement above describes the earlier wording. The change came from
+  // listening rather than counting: fusing words in the *text* was not enough
+  // on its own, and the model had to be told what to do with the result —
+  // delivery turned out to be driven by the prompt at least as much as by the
+  // transcription. Modern keeps the short form; it is reading its own language
+  // and never had the problem.
+  //
+  // The two spell out the SAME delivery, clause for clause, and differ only
+  // where the notation forces them to. Keeping them parallel is what makes the
+  // schemes comparable — an earlier version asked them for different things and
+  // any difference heard could not be attributed.
   const pronunciation = modern
     ? "Read this Greek aloud fluently, with Modern Greek pronunciation"
     : ipa
-      ? "The following is an IPA phonetic transcription of Ancient Greek. Read it aloud fluently, realising every symbol exactly as specified"
-      : "Read this aloud fluently, with Erasmian pronunciation of Ancient Greek, as taught in universities";
+      ? "The input is an IPA phonetic transcription of Ancient Greek. Do NOT read the symbols as English. Use them only as pronunciation instructions, realising every symbol exactly as specified — aspiration, vowel length and stress marks included. Speak the entire sentence as natural connected speech. Do not pause between individual words. Preserve natural word grouping and sentence rhythm. Pauses should occur only at punctuation or meaningful phrase boundaries. The sentence is conversational dialogue, so use natural conversational intonation rather than reading it like a vocabulary exercise."
+      : "The input is a phonetic transliteration of Ancient Greek. Do NOT read the Latin characters as English. Use them only as pronunciation instructions for reconstructed Ancient Greek. Speak the entire sentence as natural connected speech. Do not pause between individual words. Preserve natural word grouping and sentence rhythm. Pauses should occur only at punctuation or meaningful phrase boundaries. The sentence is conversational dialogue, so use natural conversational intonation rather than reading it like a vocabulary exercise.";
+      
+      /*"Read this aloud fluently, with Erasmian pronunciation of Ancient Greek, as taught in universities"; */
 
   if (!context) {
     return emotion
@@ -357,7 +372,7 @@ app.post("/api/tts", async (req, res) => {
     const phoneticText = useModern
       ? text
       : useIPA
-        ? convertToIPAForm(text, { phrasing })
+        ? convertToIPAForm(text, { phrasing, stressDensity })
         : convertToSpokenForm(text, { phrasing, preserveAccents: accents, stressDensity });
 
     // Contextual delivery is opt-in: the client sends `context` only when the
@@ -702,7 +717,10 @@ Return a JSON object with this structure:
                     englishTranslation: { type: Type.STRING, description: "Idiomatic English translation" },
                     modernGreekTranslation: { type: Type.STRING, description: "Modern Greek translation" },
                     recommendedVoice: { type: Type.STRING, description: "Fenrir | Puck | Kore | Charon | Zephyr | Aoede" },
-                    contextNote: { type: Type.STRING, description: "Grammatical or rhetorical note" },
+                    // Required: contextual delivery reads this to tell the voice what
+                    // the line is doing. Left optional, generated modules omitted it
+                    // entirely and half that feature was inert.
+                    contextNote: { type: Type.STRING, description: "Grammatical or rhetorical note. What this line is doing in the exchange — asking, conceding, objecting, explaining — in a short phrase." },
                     words: {
                       type: Type.ARRAY,
                       items: {
@@ -719,7 +737,7 @@ Return a JSON object with this structure:
                       },
                     },
                   },
-                  required: ["id", "speaker", "speakerEn", "greekText", "transliteration", "englishTranslation", "modernGreekTranslation", "words"],
+                  required: ["id", "speaker", "speakerEn", "greekText", "transliteration", "englishTranslation", "modernGreekTranslation", "contextNote", "words"],
                 },
               },
               commentary: {
