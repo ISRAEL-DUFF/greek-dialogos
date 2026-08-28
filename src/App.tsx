@@ -563,10 +563,10 @@ export default function App() {
               setActiveWordIndex(null);
               resolve();
             },
-            wordsWithSpokenForm(line),
-            (wordIndex) => {
-              setActiveWordIndex(wordIndex);
-            }
+            speechSettings.wordHighlight ? wordsWithSpokenForm(line) : undefined,
+            speechSettings.wordHighlight
+              ? (wordIndex) => setActiveWordIndex(wordIndex)
+              : undefined
           );
         });
 
@@ -635,10 +635,10 @@ export default function App() {
                 setActiveWordIndex(null);
                 resolve();
               },
-              wordsWithSpokenForm(line),
-              (wordIndex) => {
-                setActiveWordIndex(wordIndex);
-              }
+              speechSettings.wordHighlight ? wordsWithSpokenForm(line) : undefined,
+              speechSettings.wordHighlight
+                ? (wordIndex) => setActiveWordIndex(wordIndex)
+                : undefined
             );
           });
 
@@ -811,6 +811,15 @@ export default function App() {
                 playbackSpeed={playbackSpeed}
                 setPlaybackSpeed={setPlaybackSpeed}
                 isLooping={isLooping}
+                wordHighlight={speechSettings.wordHighlight}
+                onToggleWordHighlight={() => {
+                  handleSettingsChange({
+                    ...speechSettings,
+                    wordHighlight: !speechSettings.wordHighlight,
+                  });
+                  // Clear any marker left standing when it is switched off.
+                  if (speechSettings.wordHighlight) setActiveWordIndex(null);
+                }}
                 onToggleLoop={handleToggleLoop}
                 layout={activeTab === "book" ? "book" : dialogueLayoutView}
                 setLayout={(l) => {

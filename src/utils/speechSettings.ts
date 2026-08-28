@@ -25,6 +25,20 @@ export interface SpeechSettings {
   stressDensity: StressDensity;
   /** Tell the model who is speaking and what they are answering. */
   contextualDelivery: boolean;
+  /**
+   * Highlight each word as it is spoken.
+   *
+   * Off by default. The highlight is driven by an *estimate* — word timings are
+   * predicted from the transcription's shape, since the engine returns audio
+   * with no timing information. Connected speech made that estimate worse, not
+   * better: once words are fused into phonological groups and the engine is
+   * told not to pause between them, there are no longer per-word boundaries to
+   * predict, and the marker drifts behind the voice.
+   *
+   * A marker pointing at the wrong word is worse than no marker, so this is
+   * opt-in until the timings come from the audio rather than from a guess.
+   */
+  wordHighlight: boolean;
 }
 
 export const DEFAULT_SETTINGS: SpeechSettings = {
@@ -32,6 +46,7 @@ export const DEFAULT_SETTINGS: SpeechSettings = {
   connectedSpeech: true,
   stressDensity: "none",
   contextualDelivery: false,
+  wordHighlight: false,
 };
 
 /** Reference material for the settings UI. Written for a learner, not a linguist. */
@@ -96,6 +111,10 @@ export function loadSettings(): SpeechSettings {
         typeof parsed?.contextualDelivery === "boolean"
           ? parsed.contextualDelivery
           : DEFAULT_SETTINGS.contextualDelivery,
+      wordHighlight:
+        typeof parsed?.wordHighlight === "boolean"
+          ? parsed.wordHighlight
+          : DEFAULT_SETTINGS.wordHighlight,
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -115,7 +134,9 @@ export function saveSettings(settings: SpeechSettings): void {
  *
  * Folded into the audio cache key so a settings change never serves a clip
  * rendered under different settings. Contextual delivery is excluded: it has
- * its own per-line hash, since it depends on the neighbouring line too.
+ * its own per-line hash, since it depends on the neighbouring line too. Word
+ * highlighting is excluded because it changes nothing about the audio —
+ * including it would re-render every clip to toggle a visual aid.
  */
 /**
  * Bumped whenever the transcribers change what they emit for the same settings.

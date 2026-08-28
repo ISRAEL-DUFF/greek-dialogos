@@ -1887,3 +1887,62 @@ instruction that two of the three schemes no longer use. Marked as historical
 rather than deleted.
 
 191 tests pass.
+
+---
+
+## Follow-along highlighting is now opt-in, and off by default
+
+Reported: the reading marker lags behind the voice.
+
+### Why it got worse
+
+The highlight was never measured — it is *predicted*. The engine returns audio
+with no timing information, so `calculateWordTimings` estimates each word's
+duration from the shape of its transcription.
+
+Connected speech made that estimate worse rather than better. Once words are
+fused into phonological groups and the engine is explicitly told not to pause
+between them, there are no longer per-word boundaries to predict: the very thing
+that fixed the vocabulary-list reading removed the acoustic landmarks the
+estimator was leaning on.
+
+A marker pointing at the wrong word is worse than no marker, so it is opt-in
+until the timings come from the audio rather than from a guess.
+
+### What was added
+
+`wordHighlight` on `SpeechSettings`, default **false**, persisted with the rest.
+
+Gated at the source, not in the view: when it is off, `playBuffer` receives
+neither the word list nor the change callback, so no timers are scheduled at all.
+Both playback paths — single line and full dialogue — are gated. Switching it off
+mid-session also clears any marker left standing.
+
+**Excluded from `settingsVariant`.** It changes nothing about the audio;
+including it would re-render every cached clip to toggle a visual aid. There is
+a test asserting the variant is identical with it on and off, since that is
+exactly the kind of thing a later edit breaks silently.
+
+The toggle sits in the reading controls beside Loop, not in Speech Settings — it
+is a reading aid, and nothing about it reaches the synthesiser. Its tooltip says
+the timings are estimated and may drift, so the behaviour is not a surprise.
+
+### Verified in the browser
+
+Fresh profile, no stored settings: the control renders **FOLLOW ALONG OFF**.
+After one click, `localStorage.wordHighlight === true` and the button reads ON
+with `aria-pressed="true"` and the active background.
+
+The screenshot taken immediately after the click still showed the inactive
+styling; computed styles showed it was correct. A repeat of a mistake recorded
+earlier in this document — reading the DOM before React has painted — and the
+reason the check was made against computed style rather than the image.
+
+195 tests pass.
+
+### Not done
+
+The real fix is measuring rather than estimating: an amplitude scan of the
+decoded buffer would give actual pause boundaries, which is far more reliable
+now that phrase breaks are the only pauses the engine is asked to make. That is
+a larger piece of work and was not attempted here.
