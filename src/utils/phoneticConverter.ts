@@ -1,3 +1,4 @@
+import { ELISION_FINAL } from "./elision.js";
 /**
  * Reconstructed Ancient Greek Phonetic Transcriber
  * 
@@ -388,7 +389,7 @@ import { groupPhonologicalWords, isProsodicallyWeak, PhraseGroup } from "./phras
 
 const VOWEL_START = /^[aeiouāēīōū]/i;
 const CONSONANT_END = /[bcdfghjklmnpqrstvwxyz]$/i;
-const TRAILING_ELISION = /['’᾽ʼ]$/;
+const TRAILING_ELISION = ELISION_FINAL;
 
 /**
  * Would fusing these two transcriptions create a sound that is in neither word?

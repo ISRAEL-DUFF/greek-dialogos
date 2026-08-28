@@ -1752,3 +1752,69 @@ is *doing* in the exchange — asking, conceding, objecting — rather than only
 naming a grammatical feature.
 
 187 tests pass.
+
+---
+
+## `Ἆρ᾿ οἶσθα` — an elision mark nobody recognised
+
+The first word of
+
+```
+Ἆρ᾿ οἶσθα, ὦ Ἀλέξανδρε, ὅτι ὁ ἀγαθὸς βασιλεὺς οὐ μόνον δυνάμει ἀλλὰ καὶ φιλίᾳ ἄρχει τῶν πολιτῶν;
+```
+
+is elided ἆρα, and its mark is **U+1FBF GREEK PSILI**. The elision set listed
+U+1FBD GREEK KORONIS — visually near-identical, a different codepoint.
+
+```
+psili    (as written)  Ἆρ᾿ | οἶσθα   ->  Ár᾿ óistha     ˈaːr᾿ ˈoi̯stʰa
+koronis                Ἆρ᾽‿οἶσθα     ->  Áróistha       ✓
+```
+
+Two failures at once: the words never fused, and the bare `᾿` was passed
+through to the speech engine.
+
+### Why it was missed
+
+The set was written out **four times** — in `phrasing`, both transcribers and
+the word-display alignment — and the copies had drifted. All four listed the
+koronis; none listed the psili.
+
+Now defined once in `elision.ts`, with U+2018 added as well, and imported by all
+four. The duplication was the bug, not the missing character.
+
+### The same sentence exposed a second defect
+
+`βασιλεὺς οὐ μόνον` fused all three words, dragging the negative **backwards**
+onto the noun. οὐ is in both clitic lists, and `AMBIGUOUS_CLITICS` documents
+that the proclitic reading should win — but that constant was exported and
+**never referenced**. The enclitic branch fired first, since it tests `next`
+while the proclitic branch tests `tail`.
+
+The enclitic branch now declines a word that also reads as a proclitic:
+
+```
+before  βασιλεὺς‿οὐ‿μόνον
+after   βασιλεὺς | οὐ‿μόνον
+```
+
+Unambiguous enclitics are unaffected: `ἄνθρωπός‿τις`, `λέγε‿μοι`,
+`σοφός‿ἐστιν` all still bind.
+
+### Result
+
+```
+Ἆρ᾿‿οἶσθα, | ὦ | Ἀλέξανδρε, | ὅτι‿ὁ‿ἀγαθὸς | βασιλεὺς | οὐ‿μόνον |
+δυνάμει | ἀλλὰ‿καὶ‿φιλίᾳ | ἄρχει | τῶν‿πολιτῶν;
+```
+
+Cache generation bumped to **5**. 191 tests pass.
+
+### Known, not changed
+
+A group fused by elision holds two lexical words, so at stress density "all"
+both are marked: `ˈaːrˈoi̯stʰa` carries two primary stresses, which is
+ill-formed IPA for a single phonological word. Every other join type binds a
+weak word, which takes no mark, so this is specific to elision. Left alone
+because "Every word" says what it does, and the default is "none" — but it is
+the one place where the density setting and IPA notation disagree.

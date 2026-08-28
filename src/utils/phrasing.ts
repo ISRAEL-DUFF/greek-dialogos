@@ -1,3 +1,4 @@
+import { ELISION_FINAL, elisionAnywhere } from "./elision.js";
 /**
  * Pass 1 — phonological phrasing.
  *
@@ -36,8 +37,9 @@ const CIRCUMFLEX_TILDE = "̃";
 /** Any punctuation that ends a phrase. Greek uses ; as the question mark and · as the ano teleia. */
 const PHRASE_BREAK = /[,.;·;!?:·«»""()—–]/;
 
-/** Apostrophes marking elision, straight and typographic. */
-const ELISION = /['’᾽ʼ]$/;
+/** Apostrophes marking elision. Defined once in elision.ts — four divergent
+ * copies of this set are what let `Ἆρ᾿` slip through unrecognised. */
+const ELISION = ELISION_FINAL;
 
 export type JoinReason = "proclitic" | "enclitic" | "elision" | "weak" | "postpositive" | "none";
 
@@ -221,7 +223,7 @@ function bareForm(word: string): string {
   return word
     .normalize("NFD")
     .replace(/[̀-ͯͅ]/g, "")
-    .replace(ELISION, "")
+    .replace(elisionAnywhere(), "")
     .toLowerCase();
 }
 
@@ -310,8 +312,13 @@ export function groupPhonologicalWords(text: string): PhraseGroup[] {
         reason = reason === "none" ? "weak" : reason;
         continue;
       }
-      // The next word leans back onto this group.
-      if (isEnclitic(next)) {
+      // The next word leans back onto this group — unless it is one of the
+      // forms that reads as a proclitic too. οὐ, οἱ and εἰς are in both lists,
+      // and the proclitic reading wins: οὐ is overwhelmingly the negative
+      // leaning onto what follows, not the rare enclitic pronoun οὗ. Without
+      // this, `βασιλεὺς οὐ μόνον` fused all three words, dragging the negative
+      // backwards onto the noun it does not belong to.
+      if (isEnclitic(next) && !isProclitic(next)) {
         group.push(next);
         reason = reason === "none" ? "enclitic" : reason;
         continue;

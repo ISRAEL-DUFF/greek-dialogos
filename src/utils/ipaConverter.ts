@@ -1,3 +1,4 @@
+import { isElisionMark } from "./elision.js";
 /**
  * Reconstructed Attic IPA transcription.
  *
@@ -201,7 +202,7 @@ function wordToSegments(word: string, markGrave = false): Segment[] {
 
     // The elision apostrophe marks a vowel that is not there; it is
     // orthography, not sound, and must not reach the synthesiser.
-    if (ch === "'" || ch === "\u2019" || ch === "\u1FBD" || ch === "\u02BC") continue;
+    if (isElisionMark(ch)) continue;
 
     // Other punctuation passes through — it drives pausing.
     segments.push({ ipa: ch, isVowel: false, accented: false, isPunct: true });

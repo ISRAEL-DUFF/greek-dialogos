@@ -125,6 +125,10 @@ export function saveSettings(settings: SpeechSettings): void {
  * the old engine — the same class of fault as a colliding cache key, just slower
  * to notice.
  *
+ * Generation 5: U+1FBF GREEK PSILI recognised as an elision mark, so `Ἆρ᾿
+ * οἶσθα` fuses instead of leaking the bare mark to the engine; a form that is
+ * both proclitic and enclitic now reads as proclitic.
+ *
  * Generation 4: in Reconstructed, a rough breathing and a stress mark no longer
  * escape outside leading punctuation — «ὁ was transcribed h«o.
  *
@@ -140,7 +144,7 @@ export function saveSettings(settings: SpeechSettings): void {
  * of that changed a single byte of its output, and churning its cache would
  * cost real credits for identical audio.
  */
-const TRANSCRIBER_GENERATION = "4";
+const TRANSCRIBER_GENERATION = "5";
 
 export function settingsVariant(settings: SpeechSettings): string {
   const scheme = settings.pronunciation[0]; // m / e / r

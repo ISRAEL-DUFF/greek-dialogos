@@ -350,3 +350,39 @@ describe("a group is never left entirely without prominence", () => {
     assert.equal((out.normalize("NFD").match(/́/g) || []).length, 1, out);
   });
 });
+
+describe("elision marks, all of them", () => {
+  const g = (t: string) => groupPhonologicalWords(t).map((x) => x.words.join("+"));
+
+  // The set was written out four times across the codebase and had drifted:
+  // every copy listed U+1FBD KORONIS, none listed U+1FBF PSILI, which is
+  // visually near-identical and just as common. `Ἆρ᾿ οἶσθα` was not recognised
+  // as elided, and the bare mark reached the speech engine.
+  test("every elision mark fuses the word with what follows", () => {
+    for (const mark of ["'", "’", "᾽", "᾿", "ʼ"]) {
+      assert.deepEqual(g(`Ἆρ${mark} οἶσθα`), [`Ἆρ${mark}+οἶσθα`], `mark U+${mark.codePointAt(0)!.toString(16)}`);
+    }
+  });
+
+  test("the mark never reaches the transcription", () => {
+    for (const mark of ["'", "’", "᾽", "᾿", "ʼ"]) {
+      const out = convertToSpokenForm(`Ἆρ${mark} οἶσθα`, { phrasing: true });
+      assert.ok(!out.includes(mark), `${mark} survived: ${out}`);
+    }
+  });
+});
+
+describe("a form that is both proclitic and enclitic reads as proclitic", () => {
+  const g = (t: string) => groupPhonologicalWords(t).map((x) => x.words.join("+"));
+
+  test("οὐ leans forward onto what it negates, not back onto the noun", () => {
+    // `βασιλεὺς οὐ μόνον` fused all three, dragging the negative backwards.
+    assert.deepEqual(g("βασιλεὺς οὐ μόνον"), ["βασιλεὺς", "οὐ+μόνον"]);
+  });
+
+  test("an unambiguous enclitic still leans back", () => {
+    assert.deepEqual(g("ἄνθρωπός τις"), ["ἄνθρωπός+τις"]);
+    assert.deepEqual(g("λέγε μοι"), ["λέγε+μοι"]);
+    assert.deepEqual(g("σοφός ἐστιν"), ["σοφός+ἐστιν"]);
+  });
+});

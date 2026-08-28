@@ -1,3 +1,4 @@
+import { elisionAnywhere } from "./elision.js";
 /**
  * Restore the punctuation that word-splitting drops.
  *
@@ -21,7 +22,7 @@
 const PUNCTUATION = /[,.;·:!?«»“”"'()\[\]—–]/g;
 
 /** Apostrophes marking elision. Part of the word visually, absent from lookup. */
-const ELISION = /['’᾽ʼ]/g;
+const ELISION = elisionAnywhere();
 
 export interface WordAffix {
   /** Punctuation printed before the word, e.g. an opening guillemet. */
