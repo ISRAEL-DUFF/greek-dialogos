@@ -1818,3 +1818,72 @@ ill-formed IPA for a single phonological word. Every other join type binds a
 weak word, which takes no mark, so this is specific to elision. Left alone
 because "Every word" says what it does, and the default is "none" — but it is
 the one place where the density setting and IPA notation disagree.
+
+---
+
+## Delivery is prompt-driven, not only transcription-driven
+
+The user rewrote the Erasmian speech prompt by hand and reported that the
+reading "is no longer feeling like reading vocabulary words". That is a finding
+worth recording, because it reframes the whole phrasing effort: fusing words in
+the *text* was necessary but not sufficient. The model also had to be told what
+to do with the result.
+
+The new instruction spells out, explicitly:
+
+- the input is a transliteration, not English;
+- speak it as connected speech, with no pause between individual words;
+- preserve word grouping and sentence rhythm;
+- pause only at punctuation or a real phrase boundary;
+- it is conversational dialogue, not a vocabulary exercise.
+
+### Ported to Reconstructed
+
+Reconstructed still carried the terse one-line prompt, and it has more to gain:
+it feeds the model IPA, which is harder to read fluently than Latin
+transliteration.
+
+The two now spell out the **same delivery, clause for clause**, and differ only
+where the notation forces them to:
+
+| | Erasmian | Reconstructed |
+|---|---|---|
+| what the input is | transliteration | IPA transcription |
+| do not read as English | Latin characters | symbols |
+| how to use it | pronunciation instructions | …realising every symbol exactly — aspiration, vowel length, stress |
+| the five delivery clauses | identical | identical |
+
+Keeping them parallel is what makes the schemes comparable. An earlier version
+asked them for different things, and any difference heard could not be
+attributed to the notation. Modern keeps the short form: it reads its own
+language and never had the problem.
+
+### Cache generation 6 — and why a prompt edit needs one
+
+The prompt is **not** part of `settingsVariant`. Replaying a line already cached
+under the same settings therefore serves its old delivery, and an A/B of a
+prompt edit silently compares nothing. Bumped to `6`, which covers both the
+hand-written Erasmian change and this port. Modern is excluded as always — its
+prompt is unchanged and its audio is byte-identical.
+
+Anyone iterating further on a prompt must bump this, or measure against a fresh
+module id.
+
+### Two notes left alone
+
+The statement now terminates explicitly. It had been relying on automatic
+semicolon insertion, because the `;` ended up inside the commented-out reference
+to the previous wording.
+
+The Erasmian instruction says "reconstructed Ancient Greek", though that branch
+is Erasmian and Reconstructed is the IPA branch above it. The model most likely
+reads it as "historical", and the delivery is reportedly good — but if Erasmian
+ever drifts toward reconstructed vowel values ([y] for υ, distinctive length),
+that word is the first thing to test.
+
+The comment block above the prompts previously documented a measurement — 7%
+shorter for Erasmian, 23% for Reconstructed — taken on the one-word "fluently"
+instruction that two of the three schemes no longer use. Marked as historical
+rather than deleted.
+
+191 tests pass.

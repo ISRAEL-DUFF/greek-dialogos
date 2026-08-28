@@ -125,6 +125,11 @@ export function saveSettings(settings: SpeechSettings): void {
  * the old engine — the same class of fault as a colliding cache key, just slower
  * to notice.
  *
+ * Generation 6: both transcribed schemes carry fuller delivery instructions in
+ * the speech prompt. The prompt is not part of the variant, so without this bump
+ * a line already cached under the same settings would keep playing its old
+ * delivery — and an A/B of a prompt edit would silently compare nothing.
+ *
  * Generation 5: U+1FBF GREEK PSILI recognised as an elision mark, so `Ἆρ᾿
  * οἶσθα` fuses instead of leaking the bare mark to the engine; a form that is
  * both proclitic and enclitic now reads as proclitic.
@@ -144,7 +149,7 @@ export function saveSettings(settings: SpeechSettings): void {
  * of that changed a single byte of its output, and churning its cache would
  * cost real credits for identical audio.
  */
-const TRANSCRIBER_GENERATION = "5";
+const TRANSCRIBER_GENERATION = "6";
 
 export function settingsVariant(settings: SpeechSettings): string {
   const scheme = settings.pronunciation[0]; // m / e / r
