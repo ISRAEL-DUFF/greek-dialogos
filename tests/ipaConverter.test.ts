@@ -22,7 +22,7 @@ describe("distinctions the Latin scheme risks losing", () => {
   });
 
   test("every vowel has its own symbol", () => {
-    const vowels = ["ἄ", "ἔ", "ἤ", "ἴ", "ὄ", "ὔ", "ὤ"].map(ipa);
+    const vowels = ["ἄ", "ἔ", "ἤ", "ἴ", "ὄ", "ὔ", "ὤ"].map((w) => ipa(w));
     assert.equal(new Set(vowels).size, vowels.length, `merged: ${vowels.join(" ")}`);
   });
 
@@ -160,5 +160,22 @@ describe("stress density in Reconstructed", () => {
     const all = out("all");
     assert.ok(!all.includes("ˈtuː"), all);
     assert.ok(!all.includes("ˈkai̯"), all);
+  });
+});
+
+describe("grave rescue in Reconstructed", () => {
+  const g = (t: string) => line(t, { phrasing: true, stressDensity: "all" });
+
+  test("a group with only a grave gets one mark", () => {
+    assert.equal(g("ὁ Ζεὺς"), "hoˈzdeu̯s");
+    assert.equal((g("ὁ Ζεὺς").match(/ˈ/g) || []).length, 1);
+  });
+
+  test("a live accent still wins", () => {
+    assert.equal(g("τὸν λόγον"), "tonˈloɡon");
+  });
+
+  test("an all-weak group stays unmarked", () => {
+    assert.equal(g("ἐπεὶ δὲ"), "epeːde");
   });
 });

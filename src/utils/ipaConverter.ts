@@ -121,7 +121,7 @@ function isMark(ch: string): boolean {
  * positioned by structure instead of by counting characters — the arithmetic
  * that misplaced the accent in every implementation that tried it.
  */
-function wordToSegments(word: string): Segment[] {
+function wordToSegments(word: string, markGrave = false): Segment[] {
   const nfd = word.normalize("NFD");
   const chars = Array.from(nfd);
 
@@ -152,7 +152,7 @@ function wordToSegments(word: string): Segment[] {
       if (DIPHTHONGS[pair]) {
         if (next.marks.includes(ROUGH)) roughBreathing = true;
         const accented =
-          hasStress(marks) || hasStress(next.marks);
+          hasStress(marks, markGrave) || hasStress(next.marks, markGrave);
         segments.push({ ipa: DIPHTHONGS[pair], isVowel: true, accented });
         i++;
         continue;
@@ -175,7 +175,7 @@ function wordToSegments(word: string): Segment[] {
       // classical Attic. Voiced here rather than dropped — the Latin scheme
       // drops it, which makes λόγῳ and λόγω identical.
       if (marks.includes(IOTA_SUB)) ipa += "i" + NONSYL;
-      segments.push({ ipa, isVowel: true, accented: hasStress(marks) });
+      segments.push({ ipa, isVowel: true, accented: hasStress(marks, markGrave) });
       continue;
     }
 
@@ -221,11 +221,23 @@ function wordToSegments(word: string): Segment[] {
  * suppressed before a following word — the one syllable that should not be
  * emphasised.
  */
-function hasStress(marks: string[]): boolean {
+function hasStress(marks: string[], includeGrave = false): boolean {
   return (
     marks.includes(ACUTE) ||
     marks.includes(CIRCUMFLEX) ||
-    marks.includes(CIRCUMFLEX_TILDE)
+    marks.includes(CIRCUMFLEX_TILDE) ||
+    (includeGrave && marks.includes(GRAVE))
+  );
+}
+
+/** A word whose only accent is a grave. */
+export function hasGraveOnly(word: string): boolean {
+  const nfd = word.normalize("NFD");
+  return (
+    nfd.includes(GRAVE) &&
+    !nfd.includes(ACUTE) &&
+    !nfd.includes(CIRCUMFLEX) &&
+    !nfd.includes(CIRCUMFLEX_TILDE)
   );
 }
 
@@ -261,10 +273,31 @@ function placeStress(segments: Segment[]): string {
     .join("");
 }
 
+/**
+ * The word that should carry a group's mark when nothing in it has a live
+ * accent, or -1 when the group is legitimately unmarked. Rightmost, because
+ * nuclear prominence falls late. Mirrors the Erasmian transcriber.
+ */
+function graveRescueIndex(words: string[]): number {
+  const eligible = words.filter((w) => !isProsodicallyWeak(w));
+  if (eligible.some((w) => convertWordToIPA(w).includes(STRESS))) return -1;
+  for (let i = words.length - 1; i >= 0; i--) {
+    if (!isProsodicallyWeak(words[i]) && hasGraveOnly(words[i])) return i;
+  }
+  return -1;
+}
+
 /** Transcribe a single word to IPA. */
-export function convertWordToIPA(word: string): string {
+export function convertWordToIPA(
+  word: string,
+  // An object, not a positional boolean: `words.map(convertWordToIPA)` would
+  // otherwise pass the array index as the flag and mark every word after the
+  // first. The compiler catches the object form; it cannot catch a number
+  // arriving where a boolean is expected from map.
+  options: { markGrave?: boolean } = {}
+): string {
   if (!word) return "";
-  return placeStress(wordToSegments(word));
+  return placeStress(wordToSegments(word, options.markGrave === true));
 }
 
 export interface IPAOptions {
@@ -303,11 +336,20 @@ export function convertToIPAForm(text: string, options: IPAOptions = {}): string
   // Transcribe first, then thin the marks. Deciding stress on the Greek and
   // deciding it on the IPA must not diverge, so there is one selection here and
   // the transcriber stays unaware of density.
-  const rendered = groups.map((group) =>
-    group.words
-      .map((w) => (isProsodicallyWeak(w) ? stripStress(convertWordToIPA(w)) : convertWordToIPA(w)))
-      .join(usePhrasing ? "" : " ")
-  );
+  const rendered = groups.map((group) => {
+    // An oxytone content word takes a grave before a following word, so `ὁ Ζεὺς`
+    // came out as `hozdeu̯s` — the clause's subject with no prominence at all.
+    // Where a group has no live accent to mark, promote its rightmost grave;
+    // suppression is relative, not absolute.
+    const rescue = graveRescueIndex(group.words);
+    return group.words
+      .map((w, i) =>
+        isProsodicallyWeak(w)
+          ? stripStress(convertWordToIPA(w))
+          : convertWordToIPA(w, { markGrave: i === rescue })
+      )
+      .join(usePhrasing ? "" : " ");
+  });
 
   if (density === "all") return rendered.join(" ");
   if (density === "none") return rendered.map(stripStress).join(" ");

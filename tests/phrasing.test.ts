@@ -319,3 +319,34 @@ describe("seams", () => {
     assert.ok(convertToSpokenForm("τῇ ἡμέρᾳ", { phrasing: true }).includes("hehmera"));
   });
 });
+
+describe("a group is never left entirely without prominence", () => {
+  const eras = (t: string) =>
+    convertToSpokenForm(t, { phrasing: true, preserveAccents: true, stressDensity: "all" });
+  const marked = (s: string) => /[́]/.test(s.normalize("NFD"));
+
+  // An oxytone content word takes a grave before a following word, so the
+  // subject of a clause could end up with no prominence at all.
+  test("a grave is promoted when nothing else in the group can be marked", () => {
+    // Normalised: the transcriber emits a combining acute, so a composed
+    // literal here would differ by encoding while looking identical.
+    const nfc = (t: string) => eras(t).normalize("NFC");
+    assert.equal(nfc("ὁ Ζεὺς"), "hozéus".normalize("NFC"));
+    assert.equal(nfc("οὐχ αὑτὴ"), "ookhautéh".normalize("NFC"));
+  });
+
+  test("the grave stays unmarked when a live accent is present", () => {
+    // The long-standing rule is unchanged wherever it has an alternative.
+    assert.equal(eras("τὸν λόγον").normalize("NFC"), "tonlógon".normalize("NFC"));
+    assert.ok(!marked("to"), "sanity");
+  });
+
+  test("an all-weak group stays silent — there is nothing to promote", () => {
+    assert.equal(eras("ἐπεὶ δὲ"), "epeide");
+  });
+
+  test("only one word is rescued, the rightmost", () => {
+    const out = eras("ὁ Ζεὺς");
+    assert.equal((out.normalize("NFD").match(/́/g) || []).length, 1, out);
+  });
+});

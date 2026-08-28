@@ -125,6 +125,11 @@ export function saveSettings(settings: SpeechSettings): void {
  * the old engine — the same class of fault as a colliding cache key, just slower
  * to notice.
  *
+ * Generation 3: a group with no live accent promotes its rightmost grave, so a
+ * clause subject like ὁ Ζεὺς is no longer left flat; homograph gates for
+ * ἆρα/ἄρα, ἀλλά/ἄλλα, εἰ/εἶ, ἡ/ἤ; an aspirate meeting a rough breathing writes
+ * one h.
+ *
  * Generation 2: prosodically weak function words (the article, prepositions,
  * καί, postpositive particles) now bind to their neighbours and never carry the
  * stress mark; stress density is honoured word-by-word and in Reconstructed.
@@ -132,7 +137,7 @@ export function saveSettings(settings: SpeechSettings): void {
  * of that changed a single byte of its output, and churning its cache would
  * cost real credits for identical audio.
  */
-const TRANSCRIBER_GENERATION = "2";
+const TRANSCRIBER_GENERATION = "3";
 
 export function settingsVariant(settings: SpeechSettings): string {
   const scheme = settings.pronunciation[0]; // m / e / r

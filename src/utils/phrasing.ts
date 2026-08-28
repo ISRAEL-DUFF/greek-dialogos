@@ -119,6 +119,7 @@ const WEAK_PROCLITICS = new Set([
   "συν", "ανα", "υπερ", "αντι", "προ", "αμφι", "ενεκα", "χωρις", "ανευ",
   // coordinators and subordinators that lean on what they introduce
   "και", "ουδε", "μηδε", "αλλα", "ουτε", "μητε", "εαν", "οτι", "ινα",
+  "επει", "επειδη", "οτε", "ωστε", "οπως", "εως",
   // the accented negative (οὐ, οὐκ, οὐχ are unaccented proclitics)
   "μη",
 ]);

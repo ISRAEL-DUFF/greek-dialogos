@@ -1550,3 +1550,66 @@ dropping their h would delete the vowel. Predates the phrasing work.
 so it is not the enclitic νυν, which is the original accent test still working.
 
 166 tests pass.
+
+---
+
+## The grave could leave a group with no prominence
+
+An oxytone content word takes a **grave** before a following word, and the
+transcribers treat the grave as an accent Greek suppresses — correctly, since
+marking it would place stress exactly where the language removes it.
+
+But suppression is relative, not absolute, and where the whole group had nothing
+else to mark the result was a flat group:
+
+```
+ὁ Ζεὺς      ->  hozeus     hozdeu̯s     the clause subject, no prominence
+οὐχ αὑτὴ    ->  ookhauteh  uːkʰhau̯tɛː
+```
+
+### Measured before changing anything
+
+84 groups across the reported module and the three Symposium sentences, at
+stress density "all":
+
+| | before | after |
+|---|---|---|
+| groups with no mark | 9 (11%) | 5 (6%) |
+| — all words weak, correctly unmarked | 2 | 4 |
+| — **a content word silenced by its grave** | **6** | **0** |
+| — other | 1 | 1 |
+
+### The rule
+
+A group promotes its **rightmost** grave-bearing content word, and only when no
+word in it carries a live accent. Nuclear prominence falls late, so rightmost.
+
+The long-standing behaviour is untouched wherever an alternative exists:
+`τὸν λόγον` is still `tonlógon`, never `tónlógon`. An all-weak group stays
+silent — there is nothing there that should be prominent.
+
+Implemented in both transcribers (`graveRescueIndex`), behind a `markGrave`
+option that is off by default.
+
+`ἐπεί`, `ἐπειδή`, `ὅτε`, `ὥστε`, `ὅπως`, `ἕως` joined the weak subordinators in
+the same pass. `ἐπεὶ δὲ` was being counted as a content word needing rescue when
+it is in fact two function words, and is now correctly silent.
+
+### One footgun caught by the compiler
+
+`convertWordToIPA(word, markGrave)` as a positional boolean meant any
+`words.map(convertWordToIPA)` would pass the array index as the flag and mark
+every word after the first. Changed to an options object, which the compiler can
+reject. An existing test was doing exactly that map.
+
+Cache generation bumped to **3**. Modern remains excluded — still untranscribed,
+still byte-identical.
+
+173 tests pass.
+
+### Not verified
+
+The measurement above counts stress marks in the transcription, not anything
+heard. Whether promoting the grave audibly improves delivery has not been tested
+against generated speech — an earlier lesson in this document is that a
+character-level yardstick once pointed the opposite way from the real audio.
