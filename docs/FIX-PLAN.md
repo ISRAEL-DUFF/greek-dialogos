@@ -1613,3 +1613,71 @@ The measurement above counts stress marks in the transcription, not anything
 heard. Whether promoting the grave audibly improves delivery has not been tested
 against generated speech — an earlier lesson in this document is that a
 character-level yardstick once pointed the opposite way from the real audio.
+
+---
+
+## Punctuation was missing from everything the reader sees
+
+Reported as "I hardly see punctuation in the sentences".
+
+### Where it was, and where it was not
+
+| stage | punctuation |
+|---|---|
+| generation (`greekText`) | present and correct on all 6 lines |
+| Erasmian transcription | preserved |
+| Reconstructed transcription | preserved |
+| TTS request | preserved — it sends `greekText` |
+| **`words[]`** | **absent** |
+| **every reading view** | **absent — they render `words[]`** |
+
+The audio path was never affected. The generator is asked for
+`greek: "Individual Greek word"` per entry, and strips punctuation — reasonably,
+since that field also feeds dictionary lookup and the gloss. But
+`DialogueCard` and all three `BookFormatView` layouts render `line.words`, so
+the text on the page had lost every comma, ano teleia and question mark:
+
+```
+shown:   Πάνυ μὲν οὖν ἐπεὶ δὲ τὸ σῶμα δίχα ἐτμήθη ποθοῦν ἕκαστον
+actual:  Πάνυ μὲν οὖν· ἐπεὶ δὲ τὸ σῶμα δίχα ἐτμήθη, ποθοῦν ἕκαστον
+```
+
+On a text where the question mark is a semicolon and the ano teleia marks a
+clause break, that is a real loss for a reader. Line 4 is a question whose `;`
+never reached the page.
+
+### The fix
+
+`greekText` already holds the punctuation, so nothing needs regenerating and no
+prompt changed. `wordAffixes()` aligns the two and returns the punctuation to
+print around each word; the word itself stays clean, so lookup, gloss and audio
+are untouched.
+
+Alignment was verified before relying on it — all six lines matched token for
+token. When a line cannot be aligned confidently, **every affix comes back
+empty** and the view renders exactly what it renders today. A wrong comma is
+worse than a missing one.
+
+The elision apostrophe is treated as an affix rather than punctuation, so the
+page shows `ἀλλ’` while lookup still receives `ἀλλ`.
+
+Applied to the four running-text views. Deliberately **not** applied to the
+vocabulary chip grid in `DialogueCard`, which lists words rather than prose.
+
+Confirmed against the reported module: all six lines now render byte-identical
+to `greekText`.
+
+### A latent crash closed on the way
+
+`affixesFor(line)[wIdx]` returns `WordAffix`, not `WordAffix | undefined`,
+without `noUncheckedIndexedAccess` — so the empty-array fallback would have
+thrown on `.before`. Guarded with an exported `EMPTY_AFFIX`.
+
+182 tests pass.
+
+### Still open
+
+`contextNote` is declared in the generation schema but is **not** in its
+`required` list, and no line in the reported module carries one. The contextual
+delivery feature reads it, so half of that feature is inert on generated
+modules — it falls back to speaker identity and turn-taking, which do work.

@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Volume2, HardDrive, Check } from "lucide-react";
 import { DialogueLine, DisplayMode, WordGloss } from "../types";
+import { wordAffixes, EMPTY_AFFIX } from "../utils/wordPunctuation";
 
 interface DialogueCardProps {
   line: DialogueLine;
@@ -23,6 +24,9 @@ export const DialogueCard: React.FC<DialogueCardProps> = ({
   onPlayLine,
   onSelectWord,
 }) => {
+  // `words[]` arrives without punctuation — it doubles as the lookup key — so
+  // the running text is repunctuated from `greekText`, which has it.
+  const affixes = useMemo(() => wordAffixes(line.greekText, line.words), [line]);
   const isSocrates = line.speaker === "Σωκράτης";
 
   return (
@@ -99,6 +103,7 @@ export const DialogueCard: React.FC<DialogueCardProps> = ({
         <div className={`text-xl md:text-2xl font-serif text-[#2D2A26] leading-snug tracking-normal flex flex-wrap gap-x-2.5 gap-y-2 items-baseline ${!isSocrates ? 'italic' : ''}`}>
           {line.words.map((w, idx) => {
             const isWordActive = isActive && activeWordIndex === idx;
+            const affix = affixes[idx] ?? EMPTY_AFFIX;
             return (
               <button
                 key={idx}
@@ -111,7 +116,7 @@ export const DialogueCard: React.FC<DialogueCardProps> = ({
                 }`}
                 title={`Click for grammar breakdown of "${w.greek}"`}
               >
-                <span>{w.greek}</span>
+                <span>{affix.before}{w.greek}{affix.after}</span>
               </button>
             );
           })}
