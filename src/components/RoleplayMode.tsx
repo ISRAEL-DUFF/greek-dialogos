@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { Volume2, ArrowRight, RotateCcw } from "lucide-react";
 import { DialogueLine, VoiceName, AncientGreekModule } from "../types";
+import { WordBankExercise } from "./WordBankExercise";
+import { buildWordBank } from "../utils/wordBank";
 
 interface RoleplayModeProps {
   module: AncientGreekModule;
@@ -18,15 +20,30 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isPlayingAuto, setIsPlayingAuto] = useState(false);
+  /**
+   * Has the current line's text been shown — by solving the exercise or by
+   * asking for it? Until then the Greek, its transliteration and the reference
+   * recital are all withheld, since each of them is the answer.
+   */
+  const [lineOpened, setLineOpened] = useState(false);
 
   const lines = module.lines;
   const currentLine = lines[currentStepIndex];
   const isUserTurn = currentLine ? currentLine.speaker === selectedRole : false;
 
+  // Not every line can be made into a puzzle: too short, or its words[] does
+  // not align with its greekText. Those fall back to simply showing the line.
+  const bank = currentLine
+    ? buildWordBank(currentLine.greekText, currentLine.words, currentLine.id)
+    : null;
+  const hasExercise = isUserTurn && Boolean(bank?.usable);
+  const withholdAnswer = hasExercise && !lineOpened;
+
   const handleNextStep = async () => {
     if (currentStepIndex < lines.length - 1) {
       const nextIndex = currentStepIndex + 1;
       setCurrentStepIndex(nextIndex);
+      setLineOpened(false);
       const nextLine = lines[nextIndex];
       if (nextLine.speaker !== selectedRole) {
         setIsPlayingAuto(true);
@@ -44,12 +61,14 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
   const handleReset = () => {
     setCurrentStepIndex(0);
     setIsCompleted(false);
+    setLineOpened(false);
   };
 
   const handleStartRoleplay = async (role: string) => {
     setSelectedRole(role);
     setCurrentStepIndex(0);
     setIsCompleted(false);
+    setLineOpened(false);
     const firstLine = lines[0];
     if (firstLine && firstLine.speaker !== role) {
       setIsPlayingAuto(true);
@@ -136,7 +155,12 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
             <button
               id="roleplay-listen-line"
               onClick={() => onPlayLine(currentLine)}
-              disabled={isPlayingAuto}
+              disabled={isPlayingAuto || withholdAnswer}
+              title={
+                withholdAnswer
+                  ? "Hidden while you compose — the recital would give the line away."
+                  : "Hear the line read aloud"
+              }
               className="flex items-center gap-1.5 px-2.5 py-1 border border-[#2D2A26] bg-[#FFFFFF] text-[10px] uppercase font-sans font-bold tracking-wider text-[#2D2A26] hover:bg-[#2D2A26] hover:text-[#F7F5F0] transition-colors cursor-pointer"
             >
               <Volume2 className="w-3 h-3" />
@@ -144,18 +168,34 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
             </button>
           </div>
 
-          {/* Greek Text to Speak */}
-          <div className="mt-5 space-y-2">
-            <div className="text-2xl md:text-3xl font-serif font-normal text-[#2D2A26] leading-relaxed">
-              {currentLine.greekText}
-            </div>
-            <div className="text-xs font-mono text-[#5C564E] italic">
-              {currentLine.transliteration}
-            </div>
+          {/* Greek Text to Speak — or the exercise that earns it */}
+          <div className="mt-5">
+            {hasExercise ? (
+              <WordBankExercise
+                key={currentLine.id}
+                line={currentLine}
+                onOpened={() => setLineOpened(true)}
+              />
+            ) : (
+              <div className="space-y-2">
+                <div className="text-2xl md:text-3xl font-serif font-normal text-[#2D2A26] leading-relaxed">
+                  {currentLine.greekText}
+                </div>
+                <div className="text-xs font-mono text-[#5C564E] italic">
+                  {currentLine.transliteration}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Translations */}
-          <div className="mt-5 pt-4 border-t border-[#E5E1D8] grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-sans">
+          {/* Translations. Hidden while composing: the exercise already carries
+              the English as its prompt, and repeating it here would just be
+              noise beside the word bank. */}
+          <div
+            className={`mt-5 pt-4 border-t border-[#E5E1D8] grid-cols-1 md:grid-cols-2 gap-3 text-xs font-sans ${
+              withholdAnswer ? "hidden" : "grid"
+            }`}
+          >
             <div className="p-3 bg-[#FFFFFF] border border-[#E5E1D8]">
               <span className="font-bold text-[9px] text-[#8B7355] uppercase tracking-widest block mb-0.5">
                 English Translation:
