@@ -125,6 +125,9 @@ export function saveSettings(settings: SpeechSettings): void {
  * the old engine — the same class of fault as a colliding cache key, just slower
  * to notice.
  *
+ * Generation 4: in Reconstructed, a rough breathing and a stress mark no longer
+ * escape outside leading punctuation — «ὁ was transcribed h«o.
+ *
  * Generation 3: a group with no live accent promotes its rightmost grave, so a
  * clause subject like ὁ Ζεὺς is no longer left flat; homograph gates for
  * ἆρα/ἄρα, ἀλλά/ἄλλα, εἰ/εἶ, ἡ/ἤ; an aspirate meeting a rough breathing writes
@@ -137,7 +140,7 @@ export function saveSettings(settings: SpeechSettings): void {
  * of that changed a single byte of its output, and churning its cache would
  * cost real credits for identical audio.
  */
-const TRANSCRIBER_GENERATION = "3";
+const TRANSCRIBER_GENERATION = "4";
 
 export function settingsVariant(settings: SpeechSettings): string {
   const scheme = settings.pronunciation[0]; // m / e / r

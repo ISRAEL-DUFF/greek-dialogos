@@ -109,6 +109,8 @@ interface Segment {
   ipa: string;
   isVowel: boolean;
   accented: boolean;
+  /** Punctuation passed through verbatim. Not part of any syllable. */
+  isPunct?: boolean;
 }
 
 function isMark(ch: string): boolean {
@@ -202,14 +204,18 @@ function wordToSegments(word: string, markGrave = false): Segment[] {
     if (ch === "'" || ch === "\u2019" || ch === "\u1FBD" || ch === "\u02BC") continue;
 
     // Other punctuation passes through — it drives pausing.
-    segments.push({ ipa: ch, isVowel: false, accented: false });
+    segments.push({ ipa: ch, isVowel: false, accented: false, isPunct: true });
   }
 
   if (roughBreathing) {
-    const first = segments[0];
+    // Before the first *sound*, not before the token. Unshifting to index 0 put
+    // the aspiration outside any leading punctuation — «ὁ became h«o.
+    let at = 0;
+    while (at < segments.length && segments[at].isPunct) at++;
+    const first = segments[at];
     // ῥ already carries its aspiration as devoicing.
     if (!(first && first.ipa === "r̥")) {
-      segments.unshift({ ipa: "h", isVowel: false, accented: false });
+      segments.splice(at, 0, { ipa: "h", isVowel: false, accented: false });
     }
   }
 
@@ -255,12 +261,15 @@ function placeStress(segments: Segment[]): string {
 
   let onset = nucleus;
   const prev = segments[nucleus - 1];
-  if (prev && !prev.isVowel) {
+  // Punctuation is not a consonant and cannot be a syllable onset: walking back
+  // over it put the stress mark outside the token, as in ˈ(ybrin.
+  if (prev && !prev.isVowel && !prev.isPunct) {
     onset = nucleus - 1;
     const prev2 = segments[nucleus - 2];
     if (
       prev2 &&
       !prev2.isVowel &&
+      !prev2.isPunct &&
       STOPS.has(prev2.ipa.replace("ʰ", "")) &&
       LIQUID_OR_NASAL.has(prev.ipa)
     ) {

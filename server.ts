@@ -702,7 +702,10 @@ Return a JSON object with this structure:
                     englishTranslation: { type: Type.STRING, description: "Idiomatic English translation" },
                     modernGreekTranslation: { type: Type.STRING, description: "Modern Greek translation" },
                     recommendedVoice: { type: Type.STRING, description: "Fenrir | Puck | Kore | Charon | Zephyr | Aoede" },
-                    contextNote: { type: Type.STRING, description: "Grammatical or rhetorical note" },
+                    // Required: contextual delivery reads this to tell the voice what
+                    // the line is doing. Left optional, generated modules omitted it
+                    // entirely and half that feature was inert.
+                    contextNote: { type: Type.STRING, description: "Grammatical or rhetorical note. What this line is doing in the exchange — asking, conceding, objecting, explaining — in a short phrase." },
                     words: {
                       type: Type.ARRAY,
                       items: {
@@ -719,7 +722,7 @@ Return a JSON object with this structure:
                       },
                     },
                   },
-                  required: ["id", "speaker", "speakerEn", "greekText", "transliteration", "englishTranslation", "modernGreekTranslation", "words"],
+                  required: ["id", "speaker", "speakerEn", "greekText", "transliteration", "englishTranslation", "modernGreekTranslation", "contextNote", "words"],
                 },
               },
               commentary: {

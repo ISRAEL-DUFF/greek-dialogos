@@ -1681,3 +1681,74 @@ thrown on `.before`. Guarded with an exported `EMPTY_AFFIX`.
 `required` list, and no line in the reported module carries one. The contextual
 delivery feature reads it, so half of that feature is inert on generated
 modules — it falls back to speaker identity and turn-taking, which do work.
+
+---
+
+## Is punctuation stripped before transcription? — audited
+
+Asked directly, and the earlier answer had been based on calling the converters
+rather than the path the server actually takes. Re-checked properly.
+
+### Method
+
+The server's expression, verbatim:
+
+```ts
+const phoneticText = useModern ? text
+  : useIPA ? convertToIPAForm(text, { phrasing, stressDensity })
+  : convertToSpokenForm(text, { phrasing, preserveAccents: accents, stressDensity });
+```
+
+Ten sentences — including punctuation in awkward places (a comma splitting a
+group that would otherwise bind, doubled `;;`, parentheses, guillemets, em
+dashes, elision) — across 2 schemes x 2 phrasing x 3 densities = **120 checks**,
+comparing the full ordered punctuation sequence of input against output.
+
+### Result: not stripped
+
+117 of 120 identical. The 3 exceptions were the *test's* expectation being
+wrong: with `phrasing: false` there is no seam to join across, so the elision
+apostrophe in `ἀλλ’ οὐ` survives as `all’ oo` rather than being absorbed into
+`alloo`. Deliberate in the phrasing path, incidental in the other.
+
+The only place punctuation is removed anywhere in the pipeline is `bareWord()`,
+which strips it for lexical lookup — never for output.
+
+### But the audit found a real defect
+
+Reconstructed misplaced sounds around *leading* punctuation:
+
+```
+(ὁ      ->  h(o       the aspiration outside the parenthesis
+«ὁ      ->  h«o
+(ὕβριν  ->  hˈ(ybrin  aspiration and stress mark both escaped
+```
+
+Two causes, both in `ipaConverter`:
+
+- the rough breathing was `unshift`ed to index 0 — before the *token*, not
+  before the first sound;
+- `placeStress` walked back from the accented nucleus over any non-vowel
+  segment, and punctuation is not a vowel, so the mark landed outside the token.
+
+Segments now carry `isPunct`. The aspiration is spliced in before the first
+non-punctuation segment, and the onset search stops at punctuation. Erasmian was
+never affected — it tokenises differently.
+
+```
+(ὁ      ->  (ho
+(ὕβριν  ->  (ˈhybrin
+ὁ Ζεὺς (ὁ πατήρ) ἔτεμεν.  ->  hoˈzdeu̯s (ho paˈtɛːr) ˈetemen.
+```
+
+Cache generation bumped to **4**.
+
+## contextNote is now required
+
+It was declared in the generation schema but absent from its `required` list, so
+generated modules omitted it and contextual delivery fell back to speaker
+identity alone. Added to `required`, and the description now asks what the line
+is *doing* in the exchange — asking, conceding, objecting — rather than only
+naming a grammatical feature.
+
+187 tests pass.

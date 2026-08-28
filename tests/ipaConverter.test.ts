@@ -179,3 +179,35 @@ describe("grave rescue in Reconstructed", () => {
     assert.equal(g("ἐπεὶ δὲ"), "epeːde");
   });
 });
+
+describe("punctuation attached to a word", () => {
+  // The aspiration was unshifted to index 0, i.e. before the token rather than
+  // before the first sound, and placeStress walked back over the punctuation as
+  // though it were a consonant: «ὁ gave h«o and (ὕβριν gave hˈ(ybrin.
+  test("a rough breathing stays inside leading punctuation", () => {
+    assert.equal(ipa("(ὁ"), "(ho");
+    assert.equal(ipa("«ὁ"), "«ho");
+    assert.equal(ipa("(ἡμῶν"), "(hɛːˈmɔːn");
+  });
+
+  test("the stress mark stays inside leading punctuation", () => {
+    assert.equal(ipa("(ὕβριν"), "(ˈhybrin");
+  });
+
+  test("the bare word is unchanged", () => {
+    assert.equal(ipa("ὁ"), "ho");
+    assert.equal(ipa("ὕβριν"), "ˈhybrin");
+  });
+
+  test("trailing punctuation still passes through", () => {
+    assert.equal(ipa("ὕβριν."), "ˈhybrin.");
+    assert.equal(ipa("ἡμῶν;"), "hɛːˈmɔːn;");
+  });
+
+  test("a parenthetical inside a sentence survives intact", () => {
+    assert.equal(
+      line("ὁ Ζεὺς (ὁ πατήρ) ἔτεμεν.", { phrasing: true, stressDensity: "all" }),
+      "hoˈzdeu̯s (ho paˈtɛːr) ˈetemen."
+    );
+  });
+});
