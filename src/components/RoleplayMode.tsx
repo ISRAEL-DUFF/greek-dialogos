@@ -16,7 +16,6 @@ interface RoleplayModeProps {
    * since on a cold cache it costs a synthesis.
    */
   onFetchLineAudio: (line: DialogueLine) => Promise<AudioBuffer>;
-  playbackSpeed: number;
   settings: SpeechSettings;
   onSettingsChange: (next: SpeechSettings) => void;
 }
@@ -25,7 +24,6 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
   module,
   onPlayLine,
   onFetchLineAudio,
-  playbackSpeed,
   settings,
   onSettingsChange,
 }) => {
@@ -104,10 +102,12 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
             Recitation & Dialectic Exercise • {module.titleEn}
           </span>
           <h2 className="text-2xl font-serif font-normal text-[#2D2A26]">
-            Interactive Conversational Roleplay
+            Recitation Practice
           </h2>
           <p className="text-xs text-[#5C564E] font-sans mt-1">
-            Select your persona. Speak your lines aloud in Ancient Greek while Gemini TTS reciprocates in character for the other speakers.
+            Choose a speaker. On their lines you rebuild the Greek and say it aloud; on the others, the
+            recital plays. Nothing is listening — you compare your attempt with the recital and judge it
+            yourself.
           </p>
         </div>
 
