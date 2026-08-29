@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Volume2, ArrowRight, RotateCcw } from "lucide-react";
+import { Volume2, ArrowRight, RotateCcw, Check } from "lucide-react";
 import { DialogueLine, VoiceName, AncientGreekModule } from "../types";
 import { WordBankExercise } from "./WordBankExercise";
 import { SpeakAndCompare } from "./SpeakAndCompare";
 import { buildWordBank } from "../utils/wordBank";
+import { SpeechSettings } from "../utils/speechSettings";
 
 interface RoleplayModeProps {
   module: AncientGreekModule;
@@ -16,6 +17,8 @@ interface RoleplayModeProps {
    */
   onFetchLineAudio: (line: DialogueLine) => Promise<AudioBuffer>;
   playbackSpeed: number;
+  settings: SpeechSettings;
+  onSettingsChange: (next: SpeechSettings) => void;
 }
 
 export const RoleplayMode: React.FC<RoleplayModeProps> = ({
@@ -23,6 +26,8 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
   onPlayLine,
   onFetchLineAudio,
   playbackSpeed,
+  settings,
+  onSettingsChange,
 }) => {
   const defaultSpeaker = module.speakers[0]?.name || "Σωκράτης";
   const [selectedRole, setSelectedRole] = useState<string>(defaultSpeaker);
@@ -45,7 +50,7 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
   const bank = currentLine
     ? buildWordBank(currentLine.greekText, currentLine.words, currentLine.id)
     : null;
-  const hasExercise = isUserTurn && Boolean(bank?.usable);
+  const hasExercise = isUserTurn && settings.roleplayCompose && Boolean(bank?.usable);
   const withholdAnswer = hasExercise && !lineOpened;
 
   const handleNextStep = async () => {
@@ -104,6 +109,34 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
           <p className="text-xs text-[#5C564E] font-sans mt-1">
             Select your persona. Speak your lines aloud in Ancient Greek while Gemini TTS reciprocates in character for the other speakers.
           </p>
+        </div>
+
+        {/* Exercise toggles. They live here rather than in the settings drawer
+            because this is the only place they apply, and a learner who finds
+            the composing step too hard for a long line wants it off now, not
+            three screens away. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(
+            [
+              ["roleplayCompose", "Compose", "Rebuild the line from its words before seeing it"],
+              ["roleplayRecord", "Record", "Record yourself and compare with the recital"],
+            ] as const
+          ).map(([key, label, title]) => (
+            <button
+              key={key}
+              onClick={() => onSettingsChange({ ...settings, [key]: !settings[key] })}
+              aria-pressed={settings[key]}
+              title={title}
+              className={`flex items-center gap-1.5 px-2.5 py-1 border text-[10px] uppercase font-sans font-bold tracking-wider transition-colors cursor-pointer ${
+                settings[key]
+                  ? "border-[#2D2A26] bg-[#2D2A26] text-[#F7F5F0]"
+                  : "border-[#E5E1D8] text-[#5C564E] hover:border-[#2D2A26]"
+              }`}
+            >
+              {settings[key] && <Check className="w-3 h-3" />}
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Role Switcher */}
@@ -199,7 +232,7 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
 
           {/* The speaking half. Only once the line is visible: there is nothing
               to read aloud while it is still hidden behind the exercise. */}
-          {isUserTurn && !withholdAnswer && (
+          {isUserTurn && settings.roleplayRecord && !withholdAnswer && (
             <div className="mt-5 pt-4 border-t border-[#E5E1D8]">
               <SpeakAndCompare
                 key={currentLine.id}

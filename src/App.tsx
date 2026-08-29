@@ -981,6 +981,8 @@ export default function App() {
             onPlayLine={handlePlayLine}
             onFetchLineAudio={fetchLineAudioBuffer}
             playbackSpeed={playbackSpeed}
+            settings={speechSettings}
+            onSettingsChange={handleSettingsChange}
           />
         )}
 

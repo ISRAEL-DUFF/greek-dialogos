@@ -101,3 +101,50 @@ describe("word highlighting", () => {
     );
   });
 });
+
+describe("roleplay exercise settings", () => {
+  test("both are on by default", () => {
+    // Unlike the follow-along marker these are reliable, and they are the
+    // exercise rather than an embellishment on it.
+    assert.equal(DEFAULT_SETTINGS.roleplayCompose, true);
+    assert.equal(DEFAULT_SETTINGS.roleplayRecord, true);
+  });
+
+  test("neither is part of the cache variant", () => {
+    // They decide which exercise a turn offers, not how anything is spoken.
+    // Including them would re-render every cached clip to toggle a UI choice.
+    const base = settingsVariant(DEFAULT_SETTINGS);
+    for (const flips of [
+      { roleplayCompose: false },
+      { roleplayRecord: false },
+      { roleplayCompose: false, roleplayRecord: false },
+    ]) {
+      assert.equal(settingsVariant({ ...DEFAULT_SETTINGS, ...flips }), base, JSON.stringify(flips));
+    }
+  });
+
+  test("the variant still moves for anything that changes the audio", () => {
+    // Guards the test above from being satisfied by a variant that ignores
+    // everything.
+    assert.notEqual(
+      settingsVariant({ ...DEFAULT_SETTINGS, pronunciation: "modern" }),
+      settingsVariant({ ...DEFAULT_SETTINGS, pronunciation: "erasmian" })
+    );
+    assert.notEqual(
+      settingsVariant({ ...DEFAULT_SETTINGS, stressDensity: "all" }),
+      settingsVariant({ ...DEFAULT_SETTINGS, stressDensity: "none" })
+    );
+  });
+
+  test("a stored blob written before these existed falls back to the defaults", () => {
+    const legacy: Record<string, unknown> = { ...DEFAULT_SETTINGS };
+    delete legacy.roleplayCompose;
+    delete legacy.roleplayRecord;
+    for (const key of ["roleplayCompose", "roleplayRecord"] as const) {
+      assert.equal(
+        typeof legacy[key] === "boolean" ? legacy[key] : DEFAULT_SETTINGS[key],
+        true
+      );
+    }
+  });
+});
