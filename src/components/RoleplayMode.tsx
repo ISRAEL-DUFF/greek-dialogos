@@ -3,6 +3,7 @@ import { Volume2, ArrowRight, RotateCcw, Check } from "lucide-react";
 import { DialogueLine, VoiceName, AncientGreekModule } from "../types";
 import { WordBankExercise } from "./WordBankExercise";
 import { SpeakAndCompare } from "./SpeakAndCompare";
+import { PerformanceReview } from "./PerformanceReview";
 import { buildWordBank } from "../utils/wordBank";
 import { SpeechSettings } from "../utils/speechSettings";
 
@@ -39,6 +40,16 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
    */
   const [lineOpened, setLineOpened] = useState(false);
 
+  /**
+   * Every attempt the learner has recorded this run, by line id.
+   *
+   * In memory only, for the length of the session — recordings are never
+   * written to IndexedDB, which keeps them out of the audio cache's quota and
+   * means there is nothing to evict or clean up. Reloading loses them, which is
+   * the trade for holding none of the learner's voice on disk.
+   */
+  const [attempts, setAttempts] = useState<Map<number, AudioBuffer>>(new Map());
+
   const lines = module.lines;
   const currentLine = lines[currentStepIndex];
   const isUserTurn = currentLine ? currentLine.speaker === selectedRole : false;
@@ -74,6 +85,7 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
     setCurrentStepIndex(0);
     setIsCompleted(false);
     setLineOpened(false);
+    setAttempts(new Map());
   };
 
   const handleStartRoleplay = async (role: string) => {
@@ -81,6 +93,7 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
     setCurrentStepIndex(0);
     setIsCompleted(false);
     setLineOpened(false);
+    setAttempts(new Map());
     const firstLine = lines[0];
     if (firstLine && firstLine.speaker !== role) {
       setIsPlayingAuto(true);
@@ -238,6 +251,10 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
                 key={currentLine.id}
                 line={currentLine}
                 onFetchLineAudio={onFetchLineAudio}
+                attempt={attempts.get(currentLine.id) ?? null}
+                onAttempt={(buffer) =>
+                  setAttempts((prev) => new Map(prev).set(currentLine.id, buffer))
+                }
               />
             </div>
           )}
@@ -292,7 +309,8 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
         </div>
       )}
 
-      {/* Completion View */}
+      {/* Completion View. The review sits below it: the card marks the end of
+          the run, the review is what the learner came back for. */}
       {isCompleted && (
         <div className="text-center py-10 px-6 bg-[#F7F5F0] border-2 border-[#2D2A26] space-y-4">
           <div className="w-12 h-12 bg-[#2D2A26] text-[#F7F5F0] mx-auto flex items-center justify-center font-serif text-2xl font-bold">
@@ -313,6 +331,15 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {isCompleted && (
+        <PerformanceReview
+          module={module}
+          role={selectedRole}
+          attempts={attempts}
+          onFetchLineAudio={onFetchLineAudio}
+        />
       )}
 
     </div>

@@ -121,3 +121,47 @@ the app listens but does not understand. The eyebrow text already reads
 - Should the reference clip auto-play once before the attempt, or only on request?
 - Word tiles: the line's own words only, or salted with distractors from elsewhere
   in the module?
+
+---
+
+## Added after the six phases: the performance review
+
+At the end of a run, the whole dialogue laid out and playable straight through,
+with the learner's own voice in their part and the recital in the rest — the
+reading they actually took part in, rather than the one the app would have
+produced on its own.
+
+### Three decisions, taken with the user
+
+| question | decision |
+|---|---|
+| How long do recordings live? | **This session only**, in memory. Reloading loses them; nothing of the learner's voice reaches disk, and the audio cache's quota is untouched. Keeps the commitment made in the risk table above. |
+| What plays for a line they never recorded? | **The recital, clearly marked.** The dialogue runs unbroken, and the line carries a "Not recorded" badge — a review that quietly passed the model's voice off as the learner's would be worse than useless. |
+| Can they re-record from the review? | **No.** Review only; restarting the dialogue is how a line gets redone. Keeps the completion screen a clear endpoint. |
+
+### What had to move
+
+Recordings were owned by `SpeakAndCompare`, which is remounted on every turn
+(`key={currentLine.id}`), so each one was discarded the moment the learner
+advanced. They now live in `RoleplayMode` as a `Map<lineId, AudioBuffer>`, which
+also means returning to a line you already recorded shows your attempt again.
+
+Playback reuses `gapAfter` from `dialogueTiming`, so the spacing between turns is
+derived from punctuation and speaker change exactly as it is in the Study Reader,
+rather than being a fixed interval invented for this screen. A run counter
+guards the playthrough: stopping mid-way cannot leave a stale loop fighting the
+next one for the speaker.
+
+### Verified
+
+Walked all eight turns to completion. All eight rows render with correct badges
+(Socrates → "Not recorded", Alexander → "Recital"), and the summary reads
+"0 of 4 of your lines in your own voice". Per-line playback flips only that
+line's button and costs nothing for a cached clip. The playthrough advanced
+1 → 4 with pacing, disabled the per-line buttons while running, and Stop
+restored every control.
+
+**Unverified:** the "Your voice" badge and any playback of an actual recording.
+The Browser pane blocks microphone access, so no attempt can be captured here.
+
+Cost of the whole verification: 7 TTS calls.

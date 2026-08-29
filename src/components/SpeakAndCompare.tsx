@@ -14,6 +14,15 @@ import {
 interface SpeakAndCompareProps {
   line: DialogueLine;
   onFetchLineAudio: (line: DialogueLine) => Promise<AudioBuffer>;
+  /**
+   * The attempt already recorded for this line, if any.
+   *
+   * Held by the dialogue rather than here: this component is remounted on every
+   * turn, so anything it owned would be discarded the moment the learner moved
+   * on — and the review at the end needs all of them.
+   */
+  attempt: AudioBuffer | null;
+  onAttempt: (buffer: AudioBuffer) => void;
 }
 
 /**
@@ -30,10 +39,11 @@ interface SpeakAndCompareProps {
 export const SpeakAndCompare: React.FC<SpeakAndCompareProps> = ({
   line,
   onFetchLineAudio,
+  attempt,
+  onAttempt,
 }) => {
   const recorderRef = useRef<AttemptRecorder | null>(null);
   const [recording, setRecording] = useState(false);
-  const [attempt, setAttempt] = useState<AudioBuffer | null>(null);
   const [reference, setReference] = useState<AudioBuffer | null>(null);
   const [loadingReference, setLoadingReference] = useState(false);
   const [playing, setPlaying] = useState<"reference" | "attempt" | null>(null);
@@ -71,7 +81,7 @@ export const SpeakAndCompare: React.FC<SpeakAndCompareProps> = ({
       const result = await recorder.stop();
       setRecording(false);
       recorderRef.current = null;
-      setAttempt(await audioPlayer.decodeBlob(result.blob));
+      onAttempt(await audioPlayer.decodeBlob(result.blob));
     } catch {
       setRecording(false);
       recorderRef.current = null;
