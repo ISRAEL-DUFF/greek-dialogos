@@ -2,17 +2,26 @@ import React, { useState } from "react";
 import { Volume2, ArrowRight, RotateCcw } from "lucide-react";
 import { DialogueLine, VoiceName, AncientGreekModule } from "../types";
 import { WordBankExercise } from "./WordBankExercise";
+import { SpeakAndCompare } from "./SpeakAndCompare";
 import { buildWordBank } from "../utils/wordBank";
 
 interface RoleplayModeProps {
   module: AncientGreekModule;
   onPlayLine: (line: DialogueLine) => Promise<void>;
+  /**
+   * The line's recital as a decoded buffer, for drawing beside the learner's
+   * attempt. Separate from onPlayLine because the comparison needs the samples,
+   * not the playback — and because it is only called when the learner asks,
+   * since on a cold cache it costs a synthesis.
+   */
+  onFetchLineAudio: (line: DialogueLine) => Promise<AudioBuffer>;
   playbackSpeed: number;
 }
 
 export const RoleplayMode: React.FC<RoleplayModeProps> = ({
   module,
   onPlayLine,
+  onFetchLineAudio,
   playbackSpeed,
 }) => {
   const defaultSpeaker = module.speakers[0]?.name || "Σωκράτης";
@@ -187,6 +196,18 @@ export const RoleplayMode: React.FC<RoleplayModeProps> = ({
               </div>
             )}
           </div>
+
+          {/* The speaking half. Only once the line is visible: there is nothing
+              to read aloud while it is still hidden behind the exercise. */}
+          {isUserTurn && !withholdAnswer && (
+            <div className="mt-5 pt-4 border-t border-[#E5E1D8]">
+              <SpeakAndCompare
+                key={currentLine.id}
+                line={currentLine}
+                onFetchLineAudio={onFetchLineAudio}
+              />
+            </div>
+          )}
 
           {/* Translations. Hidden while composing: the exercise already carries
               the English as its prompt, and repeating it here would just be
