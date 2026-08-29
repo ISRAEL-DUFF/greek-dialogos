@@ -52,15 +52,35 @@ export function wordAffixes(
   greekText: string,
   words: { greek: string }[]
 ): WordAffix[] {
-  const blank = words.map(() => EMPTY);
-  if (!greekText || words.length === 0) return blank;
+  return alignedAffixes(greekText, words) ?? words.map(() => EMPTY);
+}
+
+/**
+ * Can this line's `words[]` be lined up against its `greekText`?
+ *
+ * Distinct from {@link wordAffixes}, which returns blanks for both an
+ * unalignable line and a perfectly aligned line that happens to have no
+ * punctuation. A caller that must not build something on a mismatch — the word
+ * bank would otherwise assemble a puzzle that cannot be solved — needs to tell
+ * those apart.
+ */
+export function wordsAlign(greekText: string, words: { greek: string }[]): boolean {
+  return alignedAffixes(greekText, words) !== null;
+}
+
+/** The affixes, or null when the two cannot be lined up. */
+function alignedAffixes(
+  greekText: string,
+  words: { greek: string }[]
+): WordAffix[] | null {
+  if (!greekText || words.length === 0) return null;
 
   const tokens = greekText.split(/\s+/).filter(Boolean);
-  if (tokens.length !== words.length) return blank;
+  if (tokens.length !== words.length) return null;
 
   const affixes: WordAffix[] = [];
   for (let i = 0; i < tokens.length; i++) {
-    if (core(tokens[i]) !== core(words[i].greek)) return blank;
+    if (core(tokens[i]) !== core(words[i].greek)) return null;
 
     // Everything before the first letter, and from the last letter onward.
     const token = tokens[i].normalize("NFC");

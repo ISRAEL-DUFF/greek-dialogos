@@ -979,7 +979,9 @@ export default function App() {
           <RoleplayMode
             module={currentModule}
             onPlayLine={handlePlayLine}
-            playbackSpeed={playbackSpeed}
+            onFetchLineAudio={fetchLineAudioBuffer}
+            settings={speechSettings}
+            onSettingsChange={handleSettingsChange}
           />
         )}
 

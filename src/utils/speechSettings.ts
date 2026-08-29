@@ -39,6 +39,16 @@ export interface SpeechSettings {
    * opt-in until the timings come from the audio rather than from a guess.
    */
   wordHighlight: boolean;
+  /**
+   * Show the word-bank exercise on the learner's turn in Roleplay.
+   *
+   * Not a speech setting, but this is the app's one persisted preference store
+   * and a reading aid already lives here. Kept out of the cache key below: it
+   * changes nothing about the audio.
+   */
+  roleplayCompose: boolean;
+  /** Offer recording and comparison on the learner's turn in Roleplay. */
+  roleplayRecord: boolean;
 }
 
 export const DEFAULT_SETTINGS: SpeechSettings = {
@@ -47,6 +57,11 @@ export const DEFAULT_SETTINGS: SpeechSettings = {
   stressDensity: "none",
   contextualDelivery: false,
   wordHighlight: false,
+  // On by default: unlike the follow-along marker these are reliable, and they
+  // are the exercise rather than an embellishment on it. Neither reaches for
+  // the microphone on its own — that still takes an explicit press.
+  roleplayCompose: true,
+  roleplayRecord: true,
 };
 
 /** Reference material for the settings UI. Written for a learner, not a linguist. */
@@ -115,6 +130,14 @@ export function loadSettings(): SpeechSettings {
         typeof parsed?.wordHighlight === "boolean"
           ? parsed.wordHighlight
           : DEFAULT_SETTINGS.wordHighlight,
+      roleplayCompose:
+        typeof parsed?.roleplayCompose === "boolean"
+          ? parsed.roleplayCompose
+          : DEFAULT_SETTINGS.roleplayCompose,
+      roleplayRecord:
+        typeof parsed?.roleplayRecord === "boolean"
+          ? parsed.roleplayRecord
+          : DEFAULT_SETTINGS.roleplayRecord,
     };
   } catch {
     return DEFAULT_SETTINGS;

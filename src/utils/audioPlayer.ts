@@ -234,6 +234,21 @@ class AudioPlayerEngine {
   /**
    * Play an AudioBuffer with speed, completion callback, and real-time word tracking
    */
+  /**
+   * Decode a recording made by MediaRecorder.
+   *
+   * Deliberately on this engine's own context rather than a fresh one: browsers
+   * cap how many AudioContexts a page may hold, and this one is pinned to
+   * 24kHz — the rate the speech engine returns — so the learner's attempt is
+   * resampled to match the reference and the two can be compared directly.
+   *
+   * Not cached. A recording is heard once or twice and then replaced.
+   */
+  public async decodeBlob(blob: Blob): Promise<AudioBuffer> {
+    const bytes = await blob.arrayBuffer();
+    return await this.getContext().decodeAudioData(bytes);
+  }
+
   public playBuffer(
     buffer: AudioBuffer,
     speed = 1.0,
